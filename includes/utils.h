@@ -1,14 +1,10 @@
 #if !defined(_UTILS_H)
 #define _UTILS_H
 
-#include <errno.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <string.h>
-#include <sys/types.h>
-
 #define ce_null(var,msg) if( (var) == NULL ){perror(msg); exit(-1);}
 #define ce_less1(var,msg) if( (var) == -1 ){perror(msg); exit(-1);}
+#define ce_val(var, val, ret) if( (var) == (val) ){ return ret; }
+#define ce_not_val(var, val, ret) if( (var) != (val) ){ return ret; }
 
 int isNumber(const char* s, long* n);
 

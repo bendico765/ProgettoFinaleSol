@@ -1,6 +1,11 @@
-#PARAMS = -Wall -std=c99 $(PARAMS)
+PARAMS = -Wall -std=c99 
 INCLUDES = -I ../includes
+LIBS = -lpthread
 
-client: utils.c client.c
-	gcc $(INCLUDES) $^ -o $@
+all:  client server
 
+client: client_utils.c utils.c client.c
+	gcc $(PARAMS) $(INCLUDES) $^ -o $@
+
+server: utils.c thread_utils.c socket_utils.c queue.c server.c
+	gcc $(PARAMS) $(INCLUDES) $^ -o $@ -lpthread
