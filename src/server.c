@@ -16,10 +16,10 @@
 #include "queue.h"
 #include "socket_utils.h"
 #include "thread_utils.h"
+#include "config_parser.h"
 
 #define SOCKNAME "mysock"
 #define MAX_REQUESTS 5
-#define NUMBER_WORKERS 10
 
 pthread_mutex_t fd_queue_lock = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t fd_queue_cond = PTHREAD_COND_INITIALIZER;
@@ -139,11 +139,30 @@ pthread_t* initializeWorkers(int number_workers, struct thread_arg_t *arg_struct
 }
 
 int main(int argc, char *argv[]){
+	config_t server_config;
 	int signal_handler_pipe[2]; // pipe main/signal handler
 	int fd_pipe[2]; // pipe dispatcher/workers
 	node_t *fd_queue = NULL; // coda dispatcher/workers
 	pthread_t *workers = NULL; // vettore di thread workers
+
+	// controllo correttezza argomenti
+	if( argc != 2 ){ 
+		fprintf(stderr, "%s file_config\n", argv[0]); 
+		return -1;
+	}
 	
+	// lettura dal file di config
+	switch(parseConfigFile(argv[1], &server_config)){
+		case -1:
+			fprintf(stderr, "Impossibile aprire il file di configurazione\n");
+			return -1;
+		case -2:
+			fprintf(stderr, "Errore durante il parsing delle opzioni\n");
+			return -1;
+		default:
+			break;
+	}
+
 	// inizializzo le pipes
 	ce_less1(pipe(signal_handler_pipe), "Errore signal handler pipe");
 	ce_less1(pipe(fd_pipe), "Errore threads pipe");
@@ -154,11 +173,14 @@ int main(int argc, char *argv[]){
 	// inizializzo il pool di workers
 	struct thread_arg_t arg_struct = {&fd_queue, fd_pipe};
 	ce_less1(pipe(fd_pipe), "Errore pipe dispatcher/threads");
-	ce_null(workers = initializeWorkers(NUMBER_WORKERS, &arg_struct), "Errore nell'inizializzazione dei thread");
+	ce_null(workers = initializeWorkers(server_config.thread_workers, &arg_struct), "Errore nell'inizializzazione dei thread");
 
 
 	char prova;
 	readn(signal_handler_pipe[0], (void*)&prova, sizeof(char));
-	terminateWorkers(&fd_queue, workers, NUMBER_WORKERS);
+	terminateWorkers(&fd_queue, workers, server_config.thread_workers);
+	close(fd_pipe[0]);
+	close(fd_pipe[1]);
+	close(signal_handler_pipe[0]);
 	return 0;
 }

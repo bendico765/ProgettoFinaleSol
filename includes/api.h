@@ -1,5 +1,5 @@
-#if !defined(_CLIENT_API_H)
-#define _CLIENT_API_H
+#if !defined(_API_H)
+#define _API_H
 #include <time.h>
 
 int openConnection(const char* sockname, int msec, const struct timespec abstime);
@@ -13,4 +13,4 @@ int unlockFile(const char* pathname);
 int closeFile(const char* pathname);
 int removeFile(const char* pathname);
 
-#endif /* _CLIENT_API_H */
+#endif /* _API_H */

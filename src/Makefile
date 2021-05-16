@@ -7,5 +7,5 @@ all:  client server
 client: client_utils.c utils.c client.c
 	gcc $(PARAMS) $(INCLUDES) $^ -o $@
 
-server: utils.c thread_utils.c socket_utils.c queue.c server.c
+server: config_parser.c utils.c thread_utils.c socket_utils.c queue.c server.c
 	gcc $(PARAMS) $(INCLUDES) $^ -o $@ -lpthread
