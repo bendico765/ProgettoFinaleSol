@@ -44,15 +44,21 @@ int parseConfigFile(char *filename, config_t *server_config){
 			}
 			continue;
 		}
+		if( strcmp(param, "MAX_CONNECTIONS") == 0 ){
+			if( isIntNumber(value, &(server_config->max_connections)) != 0 ){
+				return -2;
+			}
+			continue;
+		}
 		if( strcmp(param, "SOCKET_NAME") == 0 ){ 
-			if( strlen(value)+1 > MAX_FILENAME ){
+			if( strlen(value)+1 > UNIX_PATH_MAX ){
 				return -2;
 			}
 			strcpy(server_config->socket_name, value);
 			continue;
 		}
 		if( strcmp(param, "LOG_FILENAME") == 0 ){ 
-			if( strlen(value)+1 > MAX_FILENAME ){
+			if( strlen(value)+1 > PATH_LEN_MAX ){
 				return -2;
 			}
 			strcpy(server_config->log_filename, value);

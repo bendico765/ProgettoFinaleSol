@@ -1,3 +1,4 @@
+#include "utils.h"
 #include "socket_utils.h"
 #include <errno.h>
 #include <unistd.h>
@@ -12,14 +13,14 @@
 	se la creazione è avvenuta con successo, altrimenti 
 	imposta errno e ritorna -1
 */
-int initializeServerAndStart(char *sockname){
+int initializeServerAndStart(char *sockname, int max_connections){
 	int fd;
 	struct sockaddr_un sa;
 	if( (fd = socket(AF_UNIX, SOCK_STREAM, 0)) == -1 ) return -1;
 	strncpy(sa.sun_path, sockname, UNIX_PATH_MAX);
 	sa.sun_family = AF_UNIX;
 	if( bind(fd, (struct sockaddr *)&sa, sizeof(sa)) == -1 ) return -1;
-	if( listen(fd, SOMAXCONN) == -1 ) return -1;
+	if( listen(fd, max_connections) == -1 ) return -1;
 	return fd;
 }
 

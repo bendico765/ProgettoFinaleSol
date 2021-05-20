@@ -9,99 +9,27 @@
 #include <sys/time.h>
 #include <sys/types.h>
 #include <sys/socket.h>
-#include <unistd.h>
-#include <signal.h>
 
 #include "utils.h"
 #include "queue.h"
 #include "socket_utils.h"
 #include "thread_utils.h"
 #include "config_parser.h"
+#include "signal_handler.h"
 
-#define SOCKNAME "mysock"
-#define MAX_REQUESTS 5
-
+// Mutex e cond. var. della coda tra dispatcher e workers
 pthread_mutex_t fd_queue_lock = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t fd_queue_cond = PTHREAD_COND_INITIALIZER;
 
+// argomenti da passare ai thread workers
 struct thread_arg_t{
-	node_t **fd_queue;
-	int *fd_pipe;
+	node_t **fd_queue; // coda dei fd da servire
+	int fd_pipe; // pipe per restituire i fd serviti al dispatcher
 } thread_arg_t;
-
-struct signal_handler_arg_t{
-	sigset_t *set;
-	int *signal_pipe;
-} signal_handler_arg_t;
-
-// THREAD SIGNAL HANDLER PERSONALIZZATO
-void* threadSignalHandler(void *arg){
-	sigset_t *set = ((struct signal_handler_arg_t*)arg)->set;
-	int *signal_handler_pipe = ((struct signal_handler_arg_t*)arg)->signal_pipe;
-	int signum;
-	// il thread rimane in attesa di segnali
-	int termination_flag = 0;
-	while( termination_flag == 0 ){
-		int ret = sigwait(set, &signum);
-		if( ret != 0 ){
-			errno = ret;
-			perror("Errore sigwait");
-			return NULL;
-		}
-		fprintf(stderr, "THREAD: ho appena ricevuto %d\n", signum);
-		// gestisco il segnale ricevuto
-		switch( signum ){
-			case SIGINT:
-			case SIGQUIT:
-			case SIGHUP:
-				termination_flag = 1;
-				close(signal_handler_pipe[1]);
-				break;
-			default:
-				break;
-		}
-	}
-	free(set);
-	free(arg);
-	return NULL;
-}
-
-int initializeSignalHandler(int signal_handler_pipe[]){
-	sigset_t *set = malloc(sizeof(sigset_t));
-	ce_null(set, "Errore malloc");
-	// maschero SIGINT. SIGQUIT e SIGHUP
-	ce_val(sigemptyset(set), -1, -1);
-	ce_val(sigaddset(set, SIGINT), -1, -1);
-	ce_val(sigaddset(set, SIGQUIT), -1, -1);
-	ce_val(sigaddset(set, SIGHUP), -1, -1);
-	ce_not_val(pthread_sigmask(SIG_BLOCK, set, NULL), 0, -1);
-	// lancio il thread per il signal handling
-	struct signal_handler_arg_t *args = malloc(sizeof(signal_handler_arg_t));
-	args->set = set;
-	args->signal_pipe = signal_handler_pipe;
-	pthread_t thread_id;
-	ce_not_val(pthread_create(&thread_id, NULL, &threadSignalHandler, (void*)args), 0, -1);
-	ce_not_val(pthread_detach(thread_id), 0, -1);
-	return 0;
-}
-
-void terminateWorkers(node_t **fd_queue, pthread_t workers[], int number_workers){
-	for(int i = 0; i < number_workers; i++){
-		lock(&fd_queue_lock);
-		insertNode(fd_queue, generateNode(-1));
-		cond_signal(&fd_queue_cond);
-		unlock(&fd_queue_lock);
-	}
-	for(int i = 0; i < number_workers; i++){
-		pthread_join(workers[i], NULL);
-	}
-	free(workers);
-}
 
 void* workerThread(void* arg){
 	node_t **fd_queue = ((struct thread_arg_t*)arg)->fd_queue;
-	int *fd_pipe =  ((struct thread_arg_t*)arg)->fd_pipe;
-	close(fd_pipe[0]);
+	int fd_pipe =  ((struct thread_arg_t*)arg)->fd_pipe;
 		
 	int termination_flag = 0;
 	while( termination_flag == 0){
@@ -120,11 +48,37 @@ void* workerThread(void* arg){
 		}
 		else{
 			// servo il file descriptor
-			// scrivo il fd nella pipe
-			//writen(fd_pipe[1], (void*)&fd, sizeof(int));
+			char c;
+			if( readn(fd, &c, sizeof(char)) == 0 ){
+				fprintf(stderr, "THREAD: chiudo la connessione con [%d]\n", fd);
+				close(fd);
+			}
+			else{
+				fprintf(stderr, "THREAD: ho ricevuto %c\n", c);
+				fprintf(stderr, "THREAD: rispondo al client\n");
+				writen(fd, &c, sizeof(char));
+				// scrivo il fd nella pipe
+				writen(fd_pipe, (void*)&fd, sizeof(int));
+				fprintf(stderr, "THREAD: ho scritto fd [%d] nella pipe\n", fd);
+			}
 		}
 	}
 	return 0;
+}
+
+void terminateWorkers(node_t **fd_queue, pthread_t workers[], int number_workers){
+	for(int i = 0; i < number_workers; i++){
+		node_t *tmp = generateNode(-1);
+		ce_null(tmp, "Errore malloc terminateWorkers");
+		lock(&fd_queue_lock);
+		insertNode(fd_queue, tmp); 
+		cond_signal(&fd_queue_cond);
+		unlock(&fd_queue_lock);
+	}
+	for(int i = 0; i < number_workers; i++){
+		pthread_join(workers[i], NULL);
+	}
+	free(workers);
 }
 
 pthread_t* initializeWorkers(int number_workers, struct thread_arg_t *arg_struct){
@@ -144,6 +98,10 @@ int main(int argc, char *argv[]){
 	int fd_pipe[2]; // pipe dispatcher/workers
 	node_t *fd_queue = NULL; // coda dispatcher/workers
 	pthread_t *workers = NULL; // vettore di thread workers
+	int socket_fd; // fd del socket del server
+	int fd_num = 0; // max fd attimo
+	fd_set set; // insieme fd attivi
+	fd_set rdset; // insieme fd attesi in lettura
 
 	// controllo correttezza argomenti
 	if( argc != 2 ){ 
@@ -165,19 +123,110 @@ int main(int argc, char *argv[]){
 
 	// inizializzo le pipes
 	ce_less1(pipe(signal_handler_pipe), "Errore signal handler pipe");
-	ce_less1(pipe(fd_pipe), "Errore threads pipe");
+	ce_less1(pipe(fd_pipe), "Errore pipe dispatcher/threads");
 	
 	// inizializzo il signal handler
 	ce_less1(initializeSignalHandler(signal_handler_pipe), "Errore inizializzazione signal handler");
 	
 	// inizializzo il pool di workers
-	struct thread_arg_t arg_struct = {&fd_queue, fd_pipe};
-	ce_less1(pipe(fd_pipe), "Errore pipe dispatcher/threads");
+	struct thread_arg_t arg_struct = {&fd_queue, fd_pipe[1]};
 	ce_null(workers = initializeWorkers(server_config.thread_workers, &arg_struct), "Errore nell'inizializzazione dei thread");
 
-
-	char prova;
-	readn(signal_handler_pipe[0], (void*)&prova, sizeof(char));
+	// inizializzo il server
+	socket_fd = initializeServerAndStart(server_config.socket_name, server_config.max_connections);
+	ce_less1(socket_fd, "Errore nell'inizializzazione della socket");
+	fprintf(stderr, "In attesa di connessioni...\n");
+	// metto il massimo indice di descrittore 
+	// attivo in fd_num
+	if( socket_fd > fd_num ){
+		fd_num = socket_fd;
+	}
+	if( signal_handler_pipe[0] > fd_num ){
+		fd_num = signal_handler_pipe[0];
+	}
+	if( fd_pipe[0] > fd_num ){
+		fd_num = fd_pipe[0];
+	}
+	FD_ZERO(&set);
+	FD_SET(socket_fd, &set);
+	FD_SET(signal_handler_pipe[0], &set);
+	FD_SET(fd_pipe[0], &set);
+	
+	int soft_termination_flag = 0;
+	int hard_termination_flag = 0;
+	while(soft_termination_flag == 0 && hard_termination_flag == 0){
+		rdset = set; // preparo la maschera per select
+		if( select(fd_num+1, &rdset, NULL, NULL, NULL) == -1 && errno != EINTR){
+			perror("Errore nella select");
+			exit(-1);
+		}
+		if( FD_ISSET(signal_handler_pipe[0], &rdset) ){ // segnale arrivato 
+			int signum;
+			read(signal_handler_pipe[0], &signum, sizeof(int));
+			switch( signum ){
+				case SIGINT:
+				case SIGQUIT:
+					soft_termination_flag = 1;
+					break;
+				case SIGHUP:
+					hard_termination_flag = 1;
+					break;
+			}
+			FD_CLR(signal_handler_pipe[0], &set);
+			if( signal_handler_pipe[0] == fd_num ){
+				fd_num -= 1;
+			}
+			close(signal_handler_pipe[0]);
+		}
+		// controllo i vari fd
+		for(int fd = 0; fd <= fd_num; fd++){
+			if( FD_ISSET(fd, &rdset ) && (fd != fd_pipe[0])){
+				if( fd == socket_fd ){ // sock connect pronto
+					int fd_connect = accept(socket_fd, NULL, 0);
+					fprintf(stderr, "Ho accettato una connessione\n");
+					FD_SET(fd_connect, &set);
+					if( fd_connect > fd_num ){
+						fd_num = fd_connect;
+					}
+				}
+				else{ // nuova richiesta di un client connesso
+						fprintf(stderr, "Nuova richiesta client [%d]\n", fd);
+						// inoltro la richiesta effettiva ad un worker
+						node_t *tmp = generateNode(fd);
+						ce_null(tmp, "Errore malloc nuova richiesta client");
+						lock(&fd_queue_lock);
+						insertNode(&fd_queue, tmp);
+						// elimino temporanemaente il fd
+						FD_CLR(fd, &set);
+						if( fd == fd_num ){
+							fd_num -= 1;
+						}
+						// notifico i workers
+						cond_signal(&fd_queue_cond);
+						unlock(&fd_queue_lock);
+				}
+			}
+		}
+		// reinserisco gli eventuali fd serviti dai workers
+		if( FD_ISSET(fd_pipe[0], &rdset ) ){
+			int new_fd;
+			int read_chars;
+			read_chars = readn(fd_pipe[0], (void*)&new_fd, sizeof(int));
+			if( read_chars == -1 ){
+				perror("Errore nella read della pipe di fd");
+				hard_termination_flag = 1;
+			}
+			else{
+				fprintf(stderr, "Ho letto [%d] dalla pipe\n", new_fd);
+				FD_SET(new_fd, &set);
+				if( new_fd > fd_num ){
+					fd_num = new_fd;
+				}
+			}
+		}
+	}
+	close(socket_fd);
+	unlink(server_config.socket_name);
 	terminateWorkers(&fd_queue, workers, server_config.thread_workers);
 	close(fd_pipe[0]);
 	close(fd_pipe[1]);

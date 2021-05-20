@@ -7,7 +7,8 @@
 #define ce_less1(var,msg) if( (var) == -1 ){perror(msg); exit(-1);}
 #define ce_val(var, val, ret) if( (var) == (val) ){ return ret; }
 #define ce_not_val(var, val, ret) if( (var) != (val) ){ return ret; }
-
+#define UNIX_PATH_MAX 108 // massima dimensione nome socket
+#define PATH_LEN_MAX 100 // massima dimensione path di un file 
 
 int isIntNumber(const char* s, int* n);
 int isNumber(const char* s, long* n);
