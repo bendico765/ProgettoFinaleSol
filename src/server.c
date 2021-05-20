@@ -21,16 +21,21 @@
 pthread_mutex_t fd_queue_lock = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t fd_queue_cond = PTHREAD_COND_INITIALIZER;
 
+// Mutex del contatore di clients connessi al server
+pthread_mutex_t clients_counter_lock = PTHREAD_MUTEX_INITIALIZER;
+
 // argomenti da passare ai thread workers
 struct thread_arg_t{
 	node_t **fd_queue; // coda dei fd da servire
 	int fd_pipe; // pipe per restituire i fd serviti al dispatcher
+	int *connected_clients_counter; // contatore di clients connessi
 } thread_arg_t;
 
 void* workerThread(void* arg){
 	node_t **fd_queue = ((struct thread_arg_t*)arg)->fd_queue;
 	int fd_pipe =  ((struct thread_arg_t*)arg)->fd_pipe;
-		
+	int *connected_clients_counter = ((struct thread_arg_t*)arg)->connected_clients_counter;
+	
 	int termination_flag = 0;
 	while( termination_flag == 0){
 		int fd;
@@ -51,7 +56,11 @@ void* workerThread(void* arg){
 			char c;
 			if( readn(fd, &c, sizeof(char)) == 0 ){
 				fprintf(stderr, "THREAD: chiudo la connessione con [%d]\n", fd);
+				// decremento il contatore dei clients connessi al server
+				lock(&clients_counter_lock);
+				*connected_clients_counter -= 1;
 				close(fd);
+				unlock(&clients_counter_lock);
 			}
 			else{
 				fprintf(stderr, "THREAD: ho ricevuto %c\n", c);
@@ -99,6 +108,7 @@ int main(int argc, char *argv[]){
 	node_t *fd_queue = NULL; // coda dispatcher/workers
 	pthread_t *workers = NULL; // vettore di thread workers
 	int socket_fd; // fd del socket del server
+	int connected_clients_counter = 0;
 	int fd_num = 0; // max fd attimo
 	fd_set set; // insieme fd attivi
 	fd_set rdset; // insieme fd attesi in lettura
@@ -129,7 +139,7 @@ int main(int argc, char *argv[]){
 	ce_less1(initializeSignalHandler(signal_handler_pipe), "Errore inizializzazione signal handler");
 	
 	// inizializzo il pool di workers
-	struct thread_arg_t arg_struct = {&fd_queue, fd_pipe[1]};
+	struct thread_arg_t arg_struct = {&fd_queue, fd_pipe[1], &connected_clients_counter};
 	ce_null(workers = initializeWorkers(server_config.thread_workers, &arg_struct), "Errore nell'inizializzazione dei thread");
 
 	// inizializzo il server
@@ -151,10 +161,9 @@ int main(int argc, char *argv[]){
 	FD_SET(socket_fd, &set);
 	FD_SET(signal_handler_pipe[0], &set);
 	FD_SET(fd_pipe[0], &set);
-	
 	int soft_termination_flag = 0;
 	int hard_termination_flag = 0;
-	while(soft_termination_flag == 0 && hard_termination_flag == 0){
+	while( hard_termination_flag == 0 && ( soft_termination_flag == 0 ||  connected_clients_counter > 0 ) ){
 		rdset = set; // preparo la maschera per select
 		if( select(fd_num+1, &rdset, NULL, NULL, NULL) == -1 && errno != EINTR){
 			perror("Errore nella select");
@@ -166,47 +175,60 @@ int main(int argc, char *argv[]){
 			switch( signum ){
 				case SIGINT:
 				case SIGQUIT:
-					soft_termination_flag = 1;
-					break;
-				case SIGHUP:
 					hard_termination_flag = 1;
 					break;
+				case SIGHUP:
+					soft_termination_flag = 1;
+					break;
 			}
+			// posso smettere di ascoltare il signal handler
 			FD_CLR(signal_handler_pipe[0], &set);
 			if( signal_handler_pipe[0] == fd_num ){
 				fd_num -= 1;
 			}
 			close(signal_handler_pipe[0]);
-		}
-		// controllo i vari fd
-		for(int fd = 0; fd <= fd_num; fd++){
-			if( FD_ISSET(fd, &rdset ) && (fd != fd_pipe[0])){
-				if( fd == socket_fd ){ // sock connect pronto
-					int fd_connect = accept(socket_fd, NULL, 0);
-					fprintf(stderr, "Ho accettato una connessione\n");
-					FD_SET(fd_connect, &set);
-					if( fd_connect > fd_num ){
-						fd_num = fd_connect;
-					}
-				}
-				else{ // nuova richiesta di un client connesso
-						fprintf(stderr, "Nuova richiesta client [%d]\n", fd);
-						// inoltro la richiesta effettiva ad un worker
-						node_t *tmp = generateNode(fd);
-						ce_null(tmp, "Errore malloc nuova richiesta client");
-						lock(&fd_queue_lock);
-						insertNode(&fd_queue, tmp);
-						// elimino temporanemaente il fd
-						FD_CLR(fd, &set);
-						if( fd == fd_num ){
-							fd_num -= 1;
-						}
-						// notifico i workers
-						cond_signal(&fd_queue_cond);
-						unlock(&fd_queue_lock);
-				}
+			// avendo ricevuto un segnale, sicuramente devo
+			// smettere di accettare nuove connessioni in arrivo,
+			// quindi posso rimuovere il fd della socket dal
+			// set
+			FD_CLR(socket_fd, &set);
+			if( socket_fd == fd_num ){
+				fd_num -= 1;
 			}
 		}
+		// controllo i vari fd
+		if( hard_termination_flag != 1 )
+			for(int fd = 0; fd <= fd_num; fd++){
+				if( FD_ISSET(fd, &rdset ) && (fd != fd_pipe[0]) && ( fd != signal_handler_pipe[0] ) ){
+					if( fd == socket_fd ){ // sock connect pronto
+						int fd_connect = accept(socket_fd, NULL, 0);
+						fprintf(stderr, "Ho accettato una connessione\n");
+						lock(&clients_counter_lock);
+						connected_clients_counter += 1;
+						unlock(&clients_counter_lock);
+						FD_SET(fd_connect, &set);
+						if( fd_connect > fd_num ){
+							fd_num = fd_connect;
+						}
+					}
+					else{ // nuova richiesta di un client connesso
+							fprintf(stderr, "Nuova richiesta client [%d]\n", fd);
+							// inoltro la richiesta effettiva ad un worker
+							node_t *tmp = generateNode(fd);
+							ce_null(tmp, "Errore malloc nuova richiesta client");
+							lock(&fd_queue_lock);
+							insertNode(&fd_queue, tmp);
+							// elimino temporanemaente il fd
+							FD_CLR(fd, &set);
+							if( fd == fd_num ){
+								fd_num -= 1;
+							}
+							// notifico i workers
+							cond_signal(&fd_queue_cond);
+							unlock(&fd_queue_lock);
+					}
+				}
+			}
 		// reinserisco gli eventuali fd serviti dai workers
 		if( FD_ISSET(fd_pipe[0], &rdset ) ){
 			int new_fd;
@@ -217,7 +239,6 @@ int main(int argc, char *argv[]){
 				hard_termination_flag = 1;
 			}
 			else{
-				fprintf(stderr, "Ho letto [%d] dalla pipe\n", new_fd);
 				FD_SET(new_fd, &set);
 				if( new_fd > fd_num ){
 					fd_num = new_fd;

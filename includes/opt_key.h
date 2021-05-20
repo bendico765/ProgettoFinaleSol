@@ -1,5 +1,5 @@
-#if !defined(_OPT_KEYS_H)
-#define _OPT_KEYS_H
+#if !defined(_OPT_KEY_H)
+#define _OPT_KEY_H
 
 typedef enum{
 	// messaggi del client
@@ -21,6 +21,6 @@ typedef enum{
 	CACHE_SUBSTITUTION = 14, // arrivo del file espulso dalla cache
 	CACHE_FULL = 15, // cache piena e tutti i file sono lockati
 	SUCCESS = 16 // operazione terminata con successo
-} opt_keys;
+} opt_key;
 
-#endif /* _OPT_KEYS_H */
+#endif /* _OPT_KEY_H */
