@@ -9,6 +9,8 @@
 #include <sys/time.h>
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 
 #include "utils.h"
 #include "queue.h"
@@ -29,12 +31,14 @@ struct thread_arg_t{
 	node_t **fd_queue; // coda dei fd da servire
 	int fd_pipe; // pipe per restituire i fd serviti al dispatcher
 	int *connected_clients_counter; // contatore di clients connessi
+	FILE *logstream; // file di log
 } thread_arg_t;
 
 void* workerThread(void* arg){
 	node_t **fd_queue = ((struct thread_arg_t*)arg)->fd_queue;
 	int fd_pipe =  ((struct thread_arg_t*)arg)->fd_pipe;
 	int *connected_clients_counter = ((struct thread_arg_t*)arg)->connected_clients_counter;
+	FILE* logstream = ((struct thread_arg_t*)arg)->logstream;
 	
 	int termination_flag = 0;
 	while( termination_flag == 0){
@@ -55,7 +59,7 @@ void* workerThread(void* arg){
 			// servo il file descriptor
 			char c;
 			if( readn(fd, &c, sizeof(char)) == 0 ){
-				fprintf(stderr, "THREAD: chiudo la connessione con [%d]\n", fd);
+				fprintf(logstream, "THREAD: chiudo la connessione con [%d]\n", fd);
 				// decremento il contatore dei clients connessi al server
 				lock(&clients_counter_lock);
 				*connected_clients_counter -= 1;
@@ -63,12 +67,12 @@ void* workerThread(void* arg){
 				unlock(&clients_counter_lock);
 			}
 			else{
-				fprintf(stderr, "THREAD: ho ricevuto %c\n", c);
-				fprintf(stderr, "THREAD: rispondo al client\n");
+				fprintf(logstream, "THREAD: ho ricevuto %c\n", c);
+				fprintf(logstream, "THREAD: rispondo al client\n");
 				writen(fd, &c, sizeof(char));
 				// scrivo il fd nella pipe
 				writen(fd_pipe, (void*)&fd, sizeof(int));
-				fprintf(stderr, "THREAD: ho scritto fd [%d] nella pipe\n", fd);
+				fprintf(logstream, "THREAD: ho scritto fd [%d] nella pipe\n", fd);
 			}
 		}
 	}
@@ -112,6 +116,7 @@ int main(int argc, char *argv[]){
 	int fd_num = 0; // max fd attimo
 	fd_set set; // insieme fd attivi
 	fd_set rdset; // insieme fd attesi in lettura
+	FILE *logstream; // file in cui stampare i messaggi di log 
 
 	// controllo correttezza argomenti
 	if( argc != 2 ){ 
@@ -130,7 +135,10 @@ int main(int argc, char *argv[]){
 		default:
 			break;
 	}
-
+	
+	// inizializzazione dello stream di log
+	ce_null(logstream = fopen(server_config.log_filename, "a"), "Errore nell'apertura del file di log");
+	
 	// inizializzo le pipes
 	ce_less1(pipe(signal_handler_pipe), "Errore signal handler pipe");
 	ce_less1(pipe(fd_pipe), "Errore pipe dispatcher/threads");
@@ -139,13 +147,14 @@ int main(int argc, char *argv[]){
 	ce_less1(initializeSignalHandler(signal_handler_pipe), "Errore inizializzazione signal handler");
 	
 	// inizializzo il pool di workers
-	struct thread_arg_t arg_struct = {&fd_queue, fd_pipe[1], &connected_clients_counter};
+	struct thread_arg_t arg_struct = {&fd_queue, fd_pipe[1], &connected_clients_counter, logstream};
 	ce_null(workers = initializeWorkers(server_config.thread_workers, &arg_struct), "Errore nell'inizializzazione dei thread");
 
 	// inizializzo il server
 	socket_fd = initializeServerAndStart(server_config.socket_name, server_config.max_connections);
 	ce_less1(socket_fd, "Errore nell'inizializzazione della socket");
-	fprintf(stderr, "In attesa di connessioni...\n");
+	fprintf(logstream, "Server avviato\n");
+	fprintf(logstream, "In attesa di connessioni...\n");
 	// metto il massimo indice di descrittore 
 	// attivo in fd_num
 	if( socket_fd > fd_num ){
@@ -175,9 +184,11 @@ int main(int argc, char *argv[]){
 			switch( signum ){
 				case SIGINT:
 				case SIGQUIT:
+					fprintf(logstream, "Terminazione brutale\n");
 					hard_termination_flag = 1;
 					break;
 				case SIGHUP:
+					fprintf(logstream, "Terminazione soft\n");
 					soft_termination_flag = 1;
 					break;
 			}
@@ -202,7 +213,7 @@ int main(int argc, char *argv[]){
 				if( FD_ISSET(fd, &rdset ) && (fd != fd_pipe[0]) && ( fd != signal_handler_pipe[0] ) ){
 					if( fd == socket_fd ){ // sock connect pronto
 						int fd_connect = accept(socket_fd, NULL, 0);
-						fprintf(stderr, "Ho accettato una connessione\n");
+						fprintf(logstream, "Ho accettato una connessione\n");
 						lock(&clients_counter_lock);
 						connected_clients_counter += 1;
 						unlock(&clients_counter_lock);
@@ -212,7 +223,7 @@ int main(int argc, char *argv[]){
 						}
 					}
 					else{ // nuova richiesta di un client connesso
-							fprintf(stderr, "Nuova richiesta client [%d]\n", fd);
+							fprintf(logstream, "Nuova richiesta client [%d]\n", fd);
 							// inoltro la richiesta effettiva ad un worker
 							node_t *tmp = generateNode(fd);
 							ce_null(tmp, "Errore malloc nuova richiesta client");
@@ -252,5 +263,6 @@ int main(int argc, char *argv[]){
 	close(fd_pipe[0]);
 	close(fd_pipe[1]);
 	close(signal_handler_pipe[0]);
+	fclose(logstream);
 	return 0;
 }
