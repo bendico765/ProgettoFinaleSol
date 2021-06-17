@@ -1,21 +1,21 @@
 #include "utils.h"
 #include "socket_utils.h"
+#include "api.h"
+#include "message.h"
 #include <stdio.h>
 #include <unistd.h>
+#include <time.h>
 
 int main(){
-	int socket_fd = initializeClientAndConnect("./mysock");
-	char prova = 'c';
-	fprintf(stderr, "Mando il messaggio1\n");
-	writen(socket_fd, &prova, sizeof(char));
-	readn(socket_fd, &prova, sizeof(char));
-	fprintf(stderr, "Ho ricevuto come risposta1 %c\n", prova);
-	prova = 'b';
-	read(0, &prova, sizeof(char));
-	fprintf(stderr, "Mando il messaggio2\n");
-	writen(socket_fd, &prova, sizeof(char));
-	readn(socket_fd, &prova, sizeof(char));
-	fprintf(stderr, "Ho ricevuto come risposta2 %c\n", prova);
-	read(0, &prova, sizeof(char));
-	close(socket_fd);
+	int socket_fd;
+	struct timespec abstime = {2,1};
+	message_header_t *tmp;
+	
+	ce_null(tmp = malloc(sizeof(message_header_t)), "Fail malloc message header");
+	ce_less1(socket_fd = openConnection("./mysock", 999, abstime), "Fail openConnection");
+	
+	
+	ce_less1(closeConnection("./mysock"), "Fail closeConnection");
+	
+	return 0;
 }

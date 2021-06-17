@@ -5,6 +5,7 @@
 #include <unistd.h>
 #include <errno.h>
 #include <pthread.h>
+#include <string.h>
 #include <sys/select.h>
 #include <sys/time.h>
 #include <sys/types.h>
@@ -18,6 +19,7 @@
 #include "thread_utils.h"
 #include "config_parser.h"
 #include "signal_handler.h"
+#include "message.h"
 
 // Mutex e cond. var. della coda tra dispatcher e workers
 pthread_mutex_t fd_queue_lock = PTHREAD_MUTEX_INITIALIZER;
@@ -52,28 +54,33 @@ void* workerThread(void* arg){
 		ce_less1( unlock(&fd_queue_lock), "Fallimento della unlock in un thread worker");
 		fd = tmp_node->value;
 		free(tmp_node);
-		if( fd == -1 ){
+		if( fd == -1 ){ // segnale di terminazione per il worker
 			termination_flag = 1;
 		}
-		else{
-			// servo il file descriptor
-			char c;
-			if( readn(fd, &c, sizeof(char)) == 0 ){
-				fprintf(logfile, "THREAD: chiudo la connessione con [%d]\n", fd);
-				// decremento il contatore dei clients connessi al server
-				lock(&clients_counter_lock);
-				*connected_clients_counter -= 1;
-				close(fd);
-				unlock(&clients_counter_lock);
-			}
-			else{
-				fprintf(logfile, "THREAD: ho ricevuto %c\n", c);
-				fprintf(logfile, "THREAD: rispondo al client\n");
-				writen(fd, &c, sizeof(char));
+		else{ // ricevo l'header del messaggio
+			int res;
+			message_header_t *hdr = malloc(sizeof(message_header_t));
+			ce_null(hdr, "Fallimento malloc thread worker");
+			res = receiveMessageHeader(fd, hdr);
+			if( res > 0 ){ // messaggio arrivato correttamente
+				// servo il file descriptor
 				// scrivo il fd nella pipe
-				writen(fd_pipe, (void*)&fd, sizeof(int));
+				ce_less1( writen(fd_pipe, (void*)&fd, sizeof(int)), "Fallimento scrittura pipe thread worker");
 				fprintf(logfile, "THREAD: ho scritto fd [%d] nella pipe\n", fd);
 			}
+			else{
+				if( res == -1 ){
+					fprintf(logfile, "THREAD: (%s) durante la lettura dell'header di [%d]\n", strerror(errno), fd);
+				}
+				// rimozione dei dati del client dalle strutture interne
+				fprintf(logfile, "THREAD: chiudo la connessione con [%d]\n", fd);
+				// decremento il contatore dei clients connessi al server
+				ce_less1( lock(&clients_counter_lock), "Fallimento della lock in un thread worker");
+				*connected_clients_counter -= 1;
+				close(fd);
+				ce_less1( unlock(&clients_counter_lock), "Fallimento della unlock in un thread worker");
+			}
+			free(hdr);
 		}
 	}
 	return 0;
@@ -142,7 +149,8 @@ int main(int argc, char *argv[]){
 	}
 	
 	// inizializzazione dello stream di log
-	ce_null(logfile = fopen(server_config.log_filename, "a"), "Errore nell'apertura del file di log");
+	//ce_null(logfile = fopen(server_config.log_filename, "a"), "Errore nell'apertura del file di log");
+	logfile = stderr;
 	
 	// inizializzo le pipes
 	ce_less1(pipe(signal_handler_pipe), "Errore signal handler pipe");
@@ -270,6 +278,6 @@ int main(int argc, char *argv[]){
 	close(fd_pipe[0]);
 	close(fd_pipe[1]);
 	close(signal_handler_pipe[0]);
-	fclose(logfile);
+	//fclose(logfile);
 	return 0;
 }
