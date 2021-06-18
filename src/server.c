@@ -20,6 +20,9 @@
 #include "config_parser.h"
 #include "signal_handler.h"
 #include "message.h"
+#include "icl_hash.h"
+#include "cache.h"
+#include "file.h"
 
 // Mutex e cond. var. della coda tra dispatcher e workers
 pthread_mutex_t fd_queue_lock = PTHREAD_MUTEX_INITIALIZER;
@@ -29,7 +32,9 @@ pthread_cond_t fd_queue_cond = PTHREAD_COND_INITIALIZER;
 pthread_mutex_t clients_counter_lock = PTHREAD_MUTEX_INITIALIZER;
 
 // argomenti da passare ai thread workers
-struct thread_arg_t{
+typedef struct{
+	icl_hash_t *file_hash_table; // storage dei files
+	cache_t *cache; // cache fifo per i files
 	queue_t *fd_queue; // coda dei fd da servire
 	int fd_pipe; // pipe per restituire i fd serviti al dispatcher
 	int *connected_clients_counter; // contatore di clients connessi
@@ -37,10 +42,12 @@ struct thread_arg_t{
 } thread_arg_t;
 
 void* workerThread(void* arg){
-	queue_t *fd_queue = ((struct thread_arg_t*)arg)->fd_queue;
-	int fd_pipe =  ((struct thread_arg_t*)arg)->fd_pipe;
-	int *connected_clients_counter = ((struct thread_arg_t*)arg)->connected_clients_counter;
-	FILE* logfile = ((struct thread_arg_t*)arg)->logfile;
+	icl_hash_t *file_hash_table = ((thread_arg_t*)arg)->file_hash_table;
+	cache_t *cache = ((thread_arg_t*)arg)->cache;
+	queue_t *fd_queue = ((thread_arg_t*)arg)->fd_queue;
+	int fd_pipe =  ((thread_arg_t*)arg)->fd_pipe;
+	int *connected_clients_counter = ((thread_arg_t*)arg)->connected_clients_counter;
+	FILE* logfile = ((thread_arg_t*)arg)->logfile;
 	
 	int termination_flag = 0;
 	while( termination_flag == 0){
@@ -107,7 +114,7 @@ void terminateWorkers(queue_t *fd_queue, pthread_t workers[], int number_workers
 	free(workers);
 }
 
-pthread_t* initializeWorkers(int number_workers, struct thread_arg_t *arg_struct){
+pthread_t* initializeWorkers(int number_workers, thread_arg_t *arg_struct){
 	pthread_t *workers = malloc(sizeof(pthread_t) * number_workers);
 	if( workers != NULL ){
 		for(int i = 0; i < number_workers; i++){
@@ -122,14 +129,17 @@ int main(int argc, char *argv[]){
 	config_t server_config;
 	int signal_handler_pipe[2]; // pipe main/signal handler
 	int fd_pipe[2]; // pipe dispatcher/workers
-	queue_t *fd_queue = NULL; // coda dispatcher/workers
-	pthread_t *workers = NULL; // vettore di thread workers
+	queue_t *fd_queue; // coda dispatcher/workers
+	pthread_t *workers; // vettore di thread workers
+	icl_hash_t *file_hash_table; // tabella hash per lo storage
+	cache_t *cache; // cache FIFO per i file
 	int socket_fd; // fd del socket del server
 	int connected_clients_counter = 0;
 	int fd_num = 0; // max fd attimo
 	fd_set set; // insieme fd attivi
 	fd_set rdset; // insieme fd attesi in lettura
 	FILE *logfile; // file in cui stampare i messaggi di log 
+	
 
 	// controllo correttezza argomenti
 	if( argc != 2 ){ 
@@ -163,10 +173,18 @@ int main(int argc, char *argv[]){
 	// inizializzo il signal handler
 	ce_less1(initializeSignalHandler(signal_handler_pipe), "Errore inizializzazione signal handler");
 	
+	// inizializzo lo storage
+	file_hash_table = icl_hash_create(server_config.num_buckets_file, NULL, NULL);
+	ce_null(file_hash_table, "Errore nell'inizializzazione dello storage");
+	
+	// inizializzo la cache
+	cache = createCache(server_config.max_memory, server_config.max_num_files);
+	ce_null(cache, "Errore nell'inizializzazione della cache");
+	
 	// inizializzo il pool di workers
-	struct thread_arg_t arg_struct = {fd_queue, fd_pipe[1], &connected_clients_counter, logfile};
+	thread_arg_t arg_struct = {file_hash_table, cache, fd_queue, fd_pipe[1], &connected_clients_counter, logfile};
 	ce_null(workers = initializeWorkers(server_config.thread_workers, &arg_struct), "Errore nell'inizializzazione dei thread");
-
+	
 	// inizializzo il server
 	socket_fd = initializeServerAndStart(server_config.socket_name, server_config.max_connections);
 	ce_less1(socket_fd, "Errore nell'inizializzazione della socket");
@@ -281,6 +299,8 @@ int main(int argc, char *argv[]){
 	unlink(server_config.socket_name);
 	terminateWorkers(fd_queue, workers, server_config.thread_workers);
 	queueDestroy(fd_queue, free);
+	destroyCache(cache);
+	icl_hash_destroy(file_hash_table, NULL, freeFile);
 	close(fd_pipe[0]);
 	close(fd_pipe[1]);
 	close(signal_handler_pipe[0]);

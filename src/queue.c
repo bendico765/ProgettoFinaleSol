@@ -49,7 +49,7 @@ void queueDestroy(queue_t *queue, void (*free_value)(void*)){
 	
 	while( (tmp = queue->head_node) != NULL ){
 		queue->head_node = queue->head_node->next_node;
-		(*free_value)(tmp->value);
+		if( *free_value ) (*free_value)(tmp->value);
 		free(tmp);
 	}
 	
@@ -58,7 +58,6 @@ void queueDestroy(queue_t *queue, void (*free_value)(void*)){
 
 /*
 	Rimuove dalla coda e restituisce l'elemento in testa.
-	Restituisce NULL nel caso in cui la lista sia vuota.
 */
 void* queueRemove(queue_t *queue){
 	void *value;

@@ -64,6 +64,12 @@ int parseConfigFile(char *filename, config_t *server_config){
 			strcpy(server_config->log_filename, value);
 			continue;
 		}
+		if( strcmp(param, "NUM_BUCKETS_FILE") == 0 ){
+			if( isIntNumber(value, &(server_config->num_buckets_file)) != 0 ){
+				return -2;
+			}
+			continue;
+		}
 		memset(buffer, '\0', BUFFERSIZE);
 	}
 	fclose(file);
