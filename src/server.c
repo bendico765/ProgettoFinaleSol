@@ -30,14 +30,14 @@ pthread_mutex_t clients_counter_lock = PTHREAD_MUTEX_INITIALIZER;
 
 // argomenti da passare ai thread workers
 struct thread_arg_t{
-	node_t **fd_queue; // coda dei fd da servire
+	queue_t *fd_queue; // coda dei fd da servire
 	int fd_pipe; // pipe per restituire i fd serviti al dispatcher
 	int *connected_clients_counter; // contatore di clients connessi
 	FILE *logfile; // file di log
 } thread_arg_t;
 
 void* workerThread(void* arg){
-	node_t **fd_queue = ((struct thread_arg_t*)arg)->fd_queue;
+	queue_t *fd_queue = ((struct thread_arg_t*)arg)->fd_queue;
 	int fd_pipe =  ((struct thread_arg_t*)arg)->fd_pipe;
 	int *connected_clients_counter = ((struct thread_arg_t*)arg)->connected_clients_counter;
 	FILE* logfile = ((struct thread_arg_t*)arg)->logfile;
@@ -45,15 +45,15 @@ void* workerThread(void* arg){
 	int termination_flag = 0;
 	while( termination_flag == 0){
 		int fd;
+		void *tmp;
 		// Sezione critica: prelevo il fd dalla coda
 		ce_less1( lock(&fd_queue_lock), "Fallimento della lock in un thread worker");
-		while( (*fd_queue) == NULL ){ // coda vuota: aspetto
+		while( (tmp = queueRemove(fd_queue)) == NULL ){ // coda vuota: aspetto
 			ce_less1( cond_wait(&fd_queue_cond, &fd_queue_lock), "Fallimento della wait in un thread worker");
 		}
-		node_t *tmp_node = removeNode(fd_queue);
 		ce_less1( unlock(&fd_queue_lock), "Fallimento della unlock in un thread worker");
-		fd = tmp_node->value;
-		free(tmp_node);
+		fd = *((int*)(tmp));
+		free(tmp);
 		if( fd == -1 ){ // segnale di terminazione per il worker
 			termination_flag = 1;
 		}
@@ -86,12 +86,13 @@ void* workerThread(void* arg){
 	return 0;
 }
 
-void terminateWorkers(node_t **fd_queue, pthread_t workers[], int number_workers){
+void terminateWorkers(queue_t *fd_queue, pthread_t workers[], int number_workers){
 	for(int i = 0; i < number_workers; i++){
-		node_t *tmp = generateNode(-1);
-		ce_null(tmp, "Errore malloc terminateWorkers");
+		int *value = malloc(sizeof(int));
+		ce_null(value, "Errore malloc terminateWorkers");
+		*value = -1;
 		ce_less1( lock(&fd_queue_lock), "Errore della lock nella terminazione dei workers");
-		insertNode(fd_queue, tmp); 
+		ce_null(queueInsert(fd_queue, (void*)value), "Errore queueInsert nella terminazione dei workers");
 		ce_less1( cond_signal(&fd_queue_cond), "Errore nella signal della terminazione dei workers");
 		ce_less1( unlock(&fd_queue_lock), "Errore nella unlock della terminazione dei workers");
 	}
@@ -121,7 +122,7 @@ int main(int argc, char *argv[]){
 	config_t server_config;
 	int signal_handler_pipe[2]; // pipe main/signal handler
 	int fd_pipe[2]; // pipe dispatcher/workers
-	node_t *fd_queue = NULL; // coda dispatcher/workers
+	queue_t *fd_queue = NULL; // coda dispatcher/workers
 	pthread_t *workers = NULL; // vettore di thread workers
 	int socket_fd; // fd del socket del server
 	int connected_clients_counter = 0;
@@ -152,6 +153,9 @@ int main(int argc, char *argv[]){
 	//ce_null(logfile = fopen(server_config.log_filename, "a"), "Errore nell'apertura del file di log");
 	logfile = stderr;
 	
+	// inizializzo la coda dispatcher/workers
+	ce_null(fd_queue = queueCreate(), "Errore creazione coda dispatcher/workers");
+	
 	// inizializzo le pipes
 	ce_less1(pipe(signal_handler_pipe), "Errore signal handler pipe");
 	ce_less1(pipe(fd_pipe), "Errore pipe dispatcher/threads");
@@ -160,7 +164,7 @@ int main(int argc, char *argv[]){
 	ce_less1(initializeSignalHandler(signal_handler_pipe), "Errore inizializzazione signal handler");
 	
 	// inizializzo il pool di workers
-	struct thread_arg_t arg_struct = {&fd_queue, fd_pipe[1], &connected_clients_counter, logfile};
+	struct thread_arg_t arg_struct = {fd_queue, fd_pipe[1], &connected_clients_counter, logfile};
 	ce_null(workers = initializeWorkers(server_config.thread_workers, &arg_struct), "Errore nell'inizializzazione dei thread");
 
 	// inizializzo il server
@@ -238,12 +242,13 @@ int main(int argc, char *argv[]){
 						}
 					}
 					else{ // nuova richiesta di un client connesso
+							int *value;
+							ce_null(value = malloc(sizeof(int)), "Errore malloc fd");
+							*value = fd;
 							fprintf(logfile, "Nuova richiesta client [%d]\n", fd);
 							// inoltro la richiesta effettiva ad un worker
-							node_t *tmp = generateNode(fd);
-							ce_null(tmp, "Errore malloc nuova richiesta client");
 							lock(&fd_queue_lock);
-							insertNode(&fd_queue, tmp);
+							ce_null(queueInsert(fd_queue, (void*)value), "Errore inserimento fd coda dispatcher/workers");
 							// elimino temporanemaente il fd
 							FD_CLR(fd, &set);
 							if( fd == fd_num ){
@@ -274,7 +279,8 @@ int main(int argc, char *argv[]){
 	}
 	close(socket_fd);
 	unlink(server_config.socket_name);
-	terminateWorkers(&fd_queue, workers, server_config.thread_workers);
+	terminateWorkers(fd_queue, workers, server_config.thread_workers);
+	queueDestroy(fd_queue, free);
 	close(fd_pipe[0]);
 	close(fd_pipe[1]);
 	close(signal_handler_pipe[0]);

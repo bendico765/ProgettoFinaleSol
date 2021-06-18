@@ -2,17 +2,20 @@
 #define _QUEUE_H
 
 // struct e signature delle funzioni usate per gestire
-// la coda di file descriptors tra server e client
-struct node_t{
-	int value;
-	struct node_t *next_node_ptr;
-};
-typedef struct node_t node_t;
+// una coda fifo
+typedef struct node_t{
+	void* value;
+	struct node_t *next_node;
+}node_t;
 
-node_t* generateNode(int value);
-void insertNode(node_t **ptr, node_t *new_node);
-node_t* removeNode(node_t **ptr);
-void printQueue(node_t *ptr);
-void freeQueue(node_t **ptr);
+typedef struct queue_t{
+	node_t *head_node;
+	node_t *tail_node;
+}queue_t;
+
+queue_t* queueCreate();
+node_t* queueInsert(queue_t *queue, void *value);
+void queueDestroy(queue_t *queue, void (*free_value)(void*));
+void* queueRemove(queue_t *queue);
 
 #endif
