@@ -15,8 +15,10 @@ typedef enum{
 	INEXISTENT_FILE = 8, // file non esistente
 	PATHNAME_TOO_LONG = 9, // pathname supera la lunghezza massima
 	FILE_NOT_OPENED = 10, // tentativo di scrittura su file non aperto
-	CACHE_SUBSTITUTION = 11, // arrivo del file espulso dalla cache
-	SUCCESS = 12 // operazione terminata con successo
+	INVALID_FLAG = 11, // flag non valido
+	CACHE_SUBSTITUTION = 12, // arrivo del file espulso dalla cache
+	INVALID_OPTION = 13, // opzione header non valida
+	SUCCESS = 14 // operazione terminata con successo
 } opt_keys;
 
 #endif /* _OPT_KEYS_H */

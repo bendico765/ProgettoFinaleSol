@@ -70,6 +70,12 @@ int parseConfigFile(char *filename, config_t *server_config){
 			}
 			continue;
 		}
+		if( strcmp(param, "NUM_BUCKETS_FD") == 0 ){
+			if( isIntNumber(value, &(server_config->num_buckets_fd)) != 0 ){
+				return -2;
+			}
+			continue;
+		}
 		memset(buffer, '\0', BUFFERSIZE);
 	}
 	fclose(file);

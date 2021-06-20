@@ -7,13 +7,10 @@
 #include <time.h>
 
 int main(){
-	int socket_fd;
 	struct timespec abstime = {2,1};
-	message_header_t *tmp;
+	ce_less1(openConnection("./mysock", 999, abstime), "Fail openConnection");
 	
-	ce_null(tmp = malloc(sizeof(message_header_t)), "Fail malloc message header");
-	ce_less1(socket_fd = openConnection("./mysock", 999, abstime), "Fail openConnection");
-	
+	ce_less1(openFile("file.txt", 1), "Errore openFile");
 	
 	ce_less1(closeConnection("./mysock"), "Fail closeConnection");
 	

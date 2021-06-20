@@ -1,5 +1,7 @@
 #include "api.h"
 #include "utils.h"
+#include "message.h"
+#include "opt_keys.h"
 #include <string.h>
 #include <errno.h>
 #include <unistd.h>
@@ -8,12 +10,12 @@
 #include <sys/types.h>
 #include <sys/un.h>
 
+#include <stdio.h>
+
 int nanosleep(const struct timespec *req, struct timespec *rem);
 
 char saved_sockname[UNIX_PATH_MAX];
 int saved_fd = -1;
-
-
 
 /*
 	Viene aperta una connessione AF_UNIX al socket file sockname.
@@ -41,19 +43,16 @@ int openConnection(const char* sockname, int msec, const struct timespec abstime
 	strncpy(saved_sockname, sockname, UNIX_PATH_MAX);
 	sa.sun_family = AF_UNIX;
 	if( (connect_result = connect(socket_fd, (struct sockaddr*)&sa, sizeof(sa))) != 0){
-		// prima attesa
+		// faccio i vari tentativi
 		struct timespec first_delay = {0, msec*1000000};
-		nanosleep(&first_delay, NULL);
-		if( (connect_result = connect(socket_fd, (struct sockaddr*)&sa, sizeof(sa))) != 0 ){
-			// seconda attesa
-			nanosleep(&abstime, NULL);
+		while( (connect_result = connect(socket_fd, (struct sockaddr*)&sa, sizeof(sa))) != 0 ){
+			fprintf(stderr, "Provo a connettermi");
+			nanosleep(&first_delay, NULL);
 		}
-		if( (connect_result = connect(socket_fd, (struct sockaddr*)&sa, sizeof(sa))) != 0 ){
-			return -1;
-		}
+		// AGGIUNGERE LA GESTIONE DEL TIMER PER ABSTIME
 	}
 	saved_fd = socket_fd;
-	return socket_fd;
+	return 0;
 }
 
 /*
@@ -76,7 +75,16 @@ int openConnection(const char* sockname, int msec, const struct timespec abstime
 	errno viene settato opportunamente.
 */
 int openFile(const char* pathname, int flags){
-	return 0;
+	message_header_t *recv_message = malloc(sizeof(message_header_t));
+	if( recv_message == NULL ) return -1;
+	if( sendMessageHeader(saved_fd, OPEN_FILE_OPT, pathname, flags) == -1 ) return -1;
+	if( receiveMessageHeader(saved_fd, recv_message) == -1 ) return -1;
+	if( recv_message->option == SUCCESS ){
+		free(recv_message);
+		return 0;
+	}
+	free(recv_message);
+	return -1;
 }
 
 /*
