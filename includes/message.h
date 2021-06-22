@@ -19,6 +19,6 @@ typedef struct{
 int sendMessageHeader(int socket_fd, opt_keys option, char *filename, int flags);
 int receiveMessageHeader(int socket_fd, message_header_t *hdr);
 int sendMessageContent(int socket_fd, size_t size, char* content);
-message_content_t* receiveMessageContent(int socket_fd);
+int receiveMessageContent(int socket_fd, message_content_t *cnt);
 
 #endif /* _MESSAGE_H */

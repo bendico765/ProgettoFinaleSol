@@ -1,5 +1,4 @@
 #include "file.h"
-#include "utils.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -11,8 +10,15 @@ file_t* generateFile(char pathname[], char *content, size_t size){
 	strncpy(new_file->pathname, pathname, PATH_LEN_MAX);
 	new_file->content = content;
 	new_file->size = size;
-	new_file->blank_file_flag = 0;
+	new_file->freshly_opened = 1;
+	new_file->is_open = 1;
 	return new_file;
+}
+
+int fileEqual(void *file1, void *file2){
+	file_t *f1 = (file_t*)file1;
+	file_t *f2 = (file_t*)file2;
+	return strcmp(f1->pathname, f2->pathname);
 }
 
 /*

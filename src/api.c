@@ -12,8 +12,6 @@
 
 #include <stdio.h>
 
-int nanosleep(const struct timespec *req, struct timespec *rem);
-
 char saved_sockname[UNIX_PATH_MAX];
 int saved_fd = -1;
 
@@ -36,20 +34,32 @@ int openConnection(const char* sockname, int msec, const struct timespec abstime
 		errno = EADDRINUSE;
 		return -1;
 	}
-	int socket_fd, connect_result;
+	
+	int socket_fd;
 	struct sockaddr_un sa;
 	if( (socket_fd = socket(AF_UNIX, SOCK_STREAM, 0)) == -1 ) return -1;
 	strncpy(sa.sun_path, sockname, UNIX_PATH_MAX);
 	strncpy(saved_sockname, sockname, UNIX_PATH_MAX);
 	sa.sun_family = AF_UNIX;
-	if( (connect_result = connect(socket_fd, (struct sockaddr*)&sa, sizeof(sa))) != 0){
+	if( connect(socket_fd, (struct sockaddr*)&sa, sizeof(sa)) != 0){
 		// faccio i vari tentativi
+		int conn_result;
+		struct timespec real_time;
 		struct timespec first_delay = {0, msec*1000000};
-		while( (connect_result = connect(socket_fd, (struct sockaddr*)&sa, sizeof(sa))) != 0 ){
-			fprintf(stderr, "Provo a connettermi");
-			nanosleep(&first_delay, NULL);
+		
+		if( clock_gettime(CLOCK_REALTIME, &real_time) == -1 ) return -1;
+		
+		while( real_time.tv_sec < abstime.tv_sec && ( conn_result = connect(socket_fd, (struct sockaddr*)&sa, sizeof(sa))) != 0){
+			fprintf(stderr, "Provo a connettermi\n");
+			
+			if( nanosleep(&first_delay, NULL) == -1 ) return -1;
+			
+			if( clock_gettime(CLOCK_REALTIME, &real_time) == -1 ) return -1;
 		}
-		// AGGIUNGERE LA GESTIONE DEL TIMER PER ABSTIME
+		if( conn_result == -1 ){
+			errno = ECONNREFUSED;
+			return -1;
+		}
 	}
 	saved_fd = socket_fd;
 	return 0;
@@ -78,6 +88,43 @@ int openFile(const char* pathname, int flags){
 	message_header_t *recv_message = malloc(sizeof(message_header_t));
 	if( recv_message == NULL ) return -1;
 	if( sendMessageHeader(saved_fd, OPEN_FILE_OPT, pathname, flags) == -1 ) return -1;
+	if( receiveMessageHeader(saved_fd, recv_message) == -1 ) return -1;
+	if( recv_message->option == SUCCESS ){
+		free(recv_message);
+		return 0;
+	}
+	free(recv_message);
+	return -1;
+}
+
+/*
+	Rimuove il file cancellandolo dal file storage server. L’operazione 
+	fallisce se il file non è in stato locked, o è in stato locked da 
+	parte di un processo client diverso da chi effettua la removeFile.
+*/
+int removeFile(const char* pathname){
+	message_header_t *recv_message = malloc(sizeof(message_header_t));
+	if( recv_message == NULL ) return -1;
+	if( sendMessageHeader(saved_fd, REMOVE_FILE_OPT, pathname, 0) == -1 ) return -1;
+	if( receiveMessageHeader(saved_fd, recv_message) == -1 ) return -1;
+	if( recv_message->option == SUCCESS ){
+		free(recv_message);
+		return 0;
+	}
+	free(recv_message);
+	return -1;
+}
+
+/*
+	Richiesta di chiusura del file puntato da ‘pathname’. 
+	Eventuali operazioni sul file dopo la closeFile falliscono.
+	Ritorna 0 in caso di successo, -1 in caso di fallimento, 
+	errno viene settato opportunamente.
+*/
+int closeFile(const char* pathname){
+	message_header_t *recv_message = malloc(sizeof(message_header_t));
+	if( recv_message == NULL ) return -1;
+	if( sendMessageHeader(saved_fd, CLOSE_FILE_OPT, pathname, 0) == -1 ) return -1;
 	if( receiveMessageHeader(saved_fd, recv_message) == -1 ) return -1;
 	if( recv_message->option == SUCCESS ){
 		free(recv_message);

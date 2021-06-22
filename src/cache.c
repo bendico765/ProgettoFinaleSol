@@ -1,6 +1,8 @@
 #include "cache.h"
 #include <stdlib.h>
 
+#include <string.h>
+
 /*
 	Crea una cache FIFO di dimensione massima in bytes 
 	pari a max_size e massimo numero di file pari a 
@@ -25,7 +27,7 @@ cache_t* createCache(size_t max_size, size_t max_num_file){
 }
 
 /*
-	Prova ad inserire il nodo contenente un file nella cache e 
+	Prova ad inserire il file nella cache e 
 	restitusce la lista di file eventualmente 
 	espulsi dopo l'inserimento.
 	La variabile err viene settata per dare maggior informazioni
@@ -82,7 +84,74 @@ queue_t* insertFileIntoCache(cache_t *cache, file_t *file, int *err){
 }
 
 /*
-	Dealloca la cache e la coda FIFO utilizzata da essa
+	restituisce 0 se i pathname sono diversi, -1 altrimenti
+*/
+int areFilesDifferent(void *a, void *b){
+	file_t *file1 = (file_t*)a;
+	file_t *file2 = (file_t*)b;
+	if( strcmp(file1->pathname, file2->pathname) != 0 ) return 0;
+	return -1;
+}
+
+/*
+		Sia file un elemento all'interno della cache e file_new_size la 
+		nuova dimensione che avrà dopo una modifica, la funzione
+		restituisce la lista di files espulsi per far spazio alla 
+		modifica del file.
+		L'espulsione è fatta preservando l'ordine fifo.
+		La variabile err viene settata per dare maggior informazioni
+		su eventuali errori, e può assumere i seguenti valori:
+		 0: operazione effettuata con successo
+		-1: parametri invalidi
+		-2: il file modificato non entrerebbe nella cache
+		-3: errore nella malloc del nuovo nodo della cache
+*/
+queue_t* editFileInCache(cache_t *cache, file_t *file, size_t file_new_size, int *err){
+	if( cache == NULL || file == NULL ){
+		*err = -1; 
+		return NULL;
+	}
+	// se il file modificato è più grande della dimensione totale
+	// della cache non ha senso fare ulteriori controlli
+	// e termino
+	if( file_new_size > cache->max_size ){
+		*err = -2;
+		return NULL;
+	}
+	queue_t *expelled_files = queueCreate(); // lista file espulsi
+	file_t *expelled_file;
+	if( expelled_files == NULL ){ 
+		*err = -3;
+		return NULL;
+	}
+	while( (cache->cur_size - file->size + file_new_size ) > cache->max_size && (expelled_file = (file_t*) queueRemoveFirstOccurrance(cache->queue, (void*)file, areFilesDifferent)) != NULL ){
+		// aggiorno le stats della cache
+		cache->cur_size -= ((file_t*)expelled_file)->size;
+		cache->cur_num_file -= 1;
+		queueInsert(expelled_files, (void*)expelled_file);
+	}
+	return expelled_files;
+}
+
+/*
+
+*/
+int removeFromCache(cache_t *cache, file_t *file){
+	if( cache == NULL || file == NULL ){
+		return -1;
+	}
+	file_t *removed_file = queueRemoveFirstOccurrance(cache->queue, (void*)file, fileEqual);
+	if( removed_file != NULL ){
+		cache->cur_size -= removed_file->size;
+		cache->cur_num_file -= 1;
+		return 0;
+	}
+	return -1;
+}
+
+/*
+	Dealloca la cache e la coda FIFO utilizzata da essa.
+	Non dealloca i dati effettivi contenuti in cache.
 */
 void destroyCache(cache_t *cache){
 	if( cache == NULL ){

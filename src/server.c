@@ -1,5 +1,3 @@
-#define _GNU_SOURCE
-#define _POSIX_C_SOURCE 200112L
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -21,16 +19,12 @@
 #include "config_parser.h"
 #include "signal_handler.h"
 #include "message.h"
-#include "icl_hash.h"
-#include "cache.h"
+#include "storage.h"
 #include "file.h"
 
 // Mutex e cond. var. della coda tra dispatcher e workers
 pthread_mutex_t fd_queue_lock = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t fd_queue_cond = PTHREAD_COND_INITIALIZER;
-
-// Mutex del contatore di clients connessi al server
-pthread_mutex_t clients_counter_lock = PTHREAD_MUTEX_INITIALIZER;
 
 // Mutex della struct delle statistiche
 pthread_mutex_t stats_lock = PTHREAD_MUTEX_INITIALIZER;
@@ -38,30 +32,16 @@ pthread_mutex_t stats_lock = PTHREAD_MUTEX_INITIALIZER;
 // Mutex dello storage
 pthread_mutex_t storage_lock = PTHREAD_MUTEX_INITIALIZER;
 
-// Mutex della tabella dei fd
-pthread_mutex_t fd_table_lock = PTHREAD_MUTEX_INITIALIZER;
-
 // argomenti da passare ai thread workers
 typedef struct{
-	icl_hash_t *file_hash_table; // storage dei files
-	icl_hash_t *fd_hash_table; // tabella dei fd
-	cache_t *cache; // cache fifo per i files
+	storage_t *storage; // storage dei files
 	queue_t *fd_queue; // coda dei fd da servire
 	int fd_pipe; // pipe per restituire i fd serviti al dispatcher
-	int *connected_clients_counter; // contatore di clients connessi
 	FILE *logfile; // file di log
 	stats_t *server_stats; // struct delle statistiche
 } thread_arg_t;
 
-void freeFdQueue(void *queue){
-	queueDestroy((queue_t*)queue, NULL);
-}
-
-/*
-	Funzione che si occupa di gestire le richieste 
-	effettuate tramite openFile()
-*/
-void openFileHandler(int fd, message_header_t *hdr, FILE *logfile, icl_hash_t *file_hash_table, icl_hash_t *fd_hash_table, cache_t *cache, stats_t *server_stats){
+void openFileHandler(int fd, message_header_t *hdr, FILE *logfile, storage_t *storage, stats_t *server_stats){
 	fprintf(logfile, "THREAD [%ld]: openFile(%s, %d)\n", pthread_self(), hdr->filename, hdr->flags);
 	// controllo la validità del flag O_CREATE
 	if( hdr->flags != 0 && hdr->flags != 1 ){
@@ -70,83 +50,113 @@ void openFileHandler(int fd, message_header_t *hdr, FILE *logfile, icl_hash_t *f
 		return;
 	}
 	// controllo se O_CREATE = 0 ed il file non esiste
+	file_t *file;
+	ce_less1( lock(&storage_lock), "Errore lock storage openFile" );
+	file = (file_t*) storageFind(storage, hdr->filename);
 	if( hdr->flags == 0 ){
-		file_t *file;
-		
-		ce_less1( lock(&storage_lock), "Errore lock file_table openFile" );
-		file = (file_t*) icl_hash_find(file_hash_table, (void*)hdr->filename);
-		ce_less1( unlock(&storage_lock), "Errore unlock file_table openFile" );
-		
 		if( file == NULL ){
 			fprintf(logfile, "THREAD [%ld]: File inesistente\n", pthread_self());
 			sendMessageHeader(fd, INEXISTENT_FILE, NULL, 0);
-			return;
 		}
 		else{
-			// aggiungo il file alla lista dei files aperti dal client associato al fd
-			fprintf(logfile, "THREAD [%ld]: Aggiungo il file alla tabella del fd\n", pthread_self());
-			queue_t *files_opened_by_fd;
-			ce_less1( lock(&fd_table_lock), "Errore lock fd_table openFile");
-			files_opened_by_fd = (queue_t*) icl_hash_find(fd_hash_table, (void*)&fd);
-			queueInsert(files_opened_by_fd, (void*)file);
-			ce_less1( unlock(&fd_table_lock), "Errore unlock fd_table openFile");
+			// imposto che il file è stato appena aperto
+			file->is_open = 1;
+			sendMessageHeader(fd, SUCCESS, NULL, 0);
 		}
 	}
 	else{
 		// controllo se O_CREATE = 1 ed il file esiste già
-		if( icl_hash_find(file_hash_table, (void*)hdr->filename) != NULL ){
+		if( file != NULL ){
 			fprintf(logfile, "THREAD [%ld]: File già esistente\n", pthread_self());
 			sendMessageHeader(fd, FILE_ALREADY_EXIST, NULL, 0);
-			return;
 		}
-		else{ // creo il file
-			/*file_t *new_file;
-			queue_t expelled_files;
-			queue_t *files_opened_by_fd;
-			file_t *expelled_file;
-			int err;
-			// creo il file vuoto
-			ce_null( new_file = generateFile(hdr->filename, NULL, 0), "Errore malloc nuovo file");
-	
-			// provo ad inserirlo in cache
-			ce_less1(lock(&storage_lock), "Errore lock storage");
-			expelled_files = insertFileIntoCache(cache, new_file, &err);
+		else{ // creo il file e lo apro
+			file_t *new_file;
+			queue_t *expelled_files;
+			int num_expelled_files;
+			int err = 0;
+			
+			new_file = generateFile(hdr->filename, NULL, 0);
+			ce_null(new_file, "Errore generazione nuovo file");
+			
+			// inserisco il file nello storage
+			expelled_files = storageInsert(storage, (void*)new_file->pathname, (void*)new_file, &err);
 			if( err != 0 ){
-				perror("Errore nell'inserimento di un nuovo file in cache");
+				perror("Errore nell'inserimento in cache durante openFile");
 				exit(-1);
 			}
-			// elimino i files espulsi dallo storage e dalla tabella dei fd
-			while( (expelled_file = (file_t*) queueRemove(expelledFiles)) != NULL ){
-			
-				icl_hash_delete(file_hash_table, (void*)expelled_file->pathname, NULL, freeFile);
+			num_expelled_files = queueLen(expelled_files);
+			if( num_expelled_files > 0 ){
+				fprintf(logfile, "THREAD [%ld]: Ho espulso %d files dallo storage\n", pthread_self(), num_expelled_files);
 			}
-			destroyQueue(expelled_files);
-			// lo inserisco nel file storage
-			ce_null(icl_hash_insert(file_hash_table, (void*)new_file->pathname, (void*)new_file), "Errore inserimento nuovo file hash table");
-			// aggiorno la lista dei files aperti dal fd
-			fprintf(logfile, "THREAD [%ld]: Aggiungo il file alla tabella del fd\n", pthread_self());
-			ce_less1( lock(&fd_table_lock), "Errore lock fd_table openFile");
-			files_opened_by_fd = (queue_t*) icl_hash_find(fd_hash_table, (void*)fd);
-			queueInsert(files_opened_by_fd, (void*)file);
+			
 			// aggiorno le statistiche
-			ce_less1(lock(&stats_lock), "Errore lock struttura statistiche");
+			ce_less1( lock(&stats_lock), "Errore lock statistiche openFile" );
 			server_stats->num_files += 1;
-			ce_less1(unlock(&stats_lock), "Errore unlock struttura statistiche");
-			ce_less1( unlock(&fd_table_lock), "Errore unlock fd_table openFile");
-			ce_less1(unlock(&storage_unlock), "Errore unlock storage");	*/	
+			if( server_stats->num_files > server_stats->max_num_files ) server_stats->max_num_files = server_stats->num_files;
+			if( num_expelled_files > 0 ) server_stats->cache_substitutions += 1;			
+			ce_less1( unlock(&stats_lock), "Errore unlock statistiche openFile" );
+
+
+
+			// dealloco gli eventuali files espulsi
+			queueDestroy(expelled_files, freeFile);
+			sendMessageHeader(fd, SUCCESS, NULL, 0);
 		}
 	}
-	sendMessageHeader(fd, SUCCESS, NULL, 0);
+	ce_less1( unlock(&storage_lock), "Errore unlock storage openFile" );
+	return;
+}
+
+void closeFileHandler(int fd, message_header_t *hdr, FILE *logfile, storage_t *storage){
+	fprintf(logfile, "THREAD [%ld]: closeFile(%s)\n", pthread_self(), hdr->filename);
+	file_t *file;
+	
+	ce_less1( lock(&storage_lock), "Errore lock storage closeFile" );
+	file = (file_t*) storageFind(storage, hdr->filename);
+	if( file == NULL ){
+		fprintf(logfile, "THREAD [%ld]: File inesistente\n", pthread_self());
+		sendMessageHeader(fd, INEXISTENT_FILE, NULL, 0);
+	}
+	else{
+		file->freshly_opened = 0;
+		file->is_open = 0;
+		sendMessageHeader(fd, SUCCESS, NULL, 0);
+	}
+	ce_less1( unlock(&storage_lock), "Errore unlock storage closeFile" );
+	return;
+}
+
+void removeFileHandler(int fd, message_header_t *hdr, FILE *logfile, storage_t *storage, stats_t *server_stats){
+	fprintf(logfile, "THREAD [%ld]: removeFile(%s)\n", pthread_self(), hdr->filename);
+	file_t *file;
+	
+	ce_less1( lock(&storage_lock), "Errore lock storage closeFile" );
+	file = (file_t*) storageFind(storage, hdr->filename);
+	if( file == NULL ){
+		fprintf(logfile, "THREAD [%ld]: File inesistente\n", pthread_self());
+		sendMessageHeader(fd, INEXISTENT_FILE, NULL, 0);
+	}
+	else{
+		// rimuovo il file dallo storage
+		storageRemove(storage, (void*)hdr->filename, NULL, freeFile);
+		
+		// aggiorno le statistiche
+		ce_less1( lock(&stats_lock), "Errore lock statistiche removeFile" );
+		server_stats->num_files -= 1;
+		server_stats->dim_storage -= file->size;
+		ce_less1( unlock(&stats_lock), "Errore unlock statistiche removeFile" );
+		
+		sendMessageHeader(fd, SUCCESS, NULL, 0);
+	}
+	ce_less1( unlock(&storage_lock), "Errore unlock storage closeFile" );
 	return;
 }
 
 void* workerThread(void* arg){
-	icl_hash_t *file_hash_table = ((thread_arg_t*)arg)->file_hash_table;
-	icl_hash_t *fd_hash_table = ((thread_arg_t*)arg)->fd_hash_table;
-	cache_t *cache = ((thread_arg_t*)arg)->cache;
+	storage_t *storage = ((thread_arg_t*)arg)->storage;
 	queue_t *fd_queue = ((thread_arg_t*)arg)->fd_queue;
 	int fd_pipe =  ((thread_arg_t*)arg)->fd_pipe;
-	int *connected_clients_counter = ((thread_arg_t*)arg)->connected_clients_counter;
 	FILE* logfile = ((thread_arg_t*)arg)->logfile;
 	stats_t *server_stats = ((thread_arg_t*)arg)->server_stats;
 	
@@ -168,16 +178,16 @@ void* workerThread(void* arg){
 		else{ // ricevo l'header del messaggio
 			int res;
 			message_header_t *hdr = malloc(sizeof(message_header_t));
-			ce_null(hdr, "Fallimento malloc thread worker");
+			ce_null(hdr, "Fallimento malloc header in thread worker");
 			res = receiveMessageHeader(fd, hdr);
 			if( res > 0 ){ // messaggio arrivato correttamente
 				// servo il file descriptor
 				switch( hdr->option ){
 					case OPEN_FILE_OPT:
-						openFileHandler(fd, hdr, logfile, file_hash_table, fd_hash_table, cache, server_stats);
+						openFileHandler(fd, hdr, logfile, storage, server_stats);
 						break;
 					case CLOSE_FILE_OPT:
-						//closeFileHandler
+						closeFileHandler(fd, hdr, logfile, storage);
 						break;
 					case READ_FILE_OPT:
 						break;
@@ -188,32 +198,29 @@ void* workerThread(void* arg){
 					case APPEND_TO_FILE_OPT:
 						break;
 					case REMOVE_FILE_OPT:
+						removeFileHandler(fd, hdr, logfile, storage, server_stats);
 						break;
 					default:
 						fprintf(logfile, "THREAD [%ld]: opzione invalida\n", pthread_self());
 						sendMessageHeader(fd, INVALID_OPTION, NULL, 0);
 						break;
+				
 				}
 				// scrivo il fd nella pipe
 				ce_less1( writen(fd_pipe, (void*)&fd, sizeof(int)), "Fallimento scrittura pipe thread worker");
 				fprintf(logfile, "THREAD [%ld]: ho scritto fd [%d] nella pipe\n", pthread_self(), fd);
 			}
-			else{
+			else{ // rimozione dei dati del client dalle strutture interne
+				int tmp = -1;
 				if( res == -1 ){
 					fprintf(logfile, "THREAD [%ld]: (%s) durante la lettura dell'header di [%d]\n", pthread_self(), strerror(errno), fd);
 				}
-				// rimozione dei dati del client dalle strutture interne
 				fprintf(logfile, "THREAD [%ld]: chiudo la connessione con [%d]\n", pthread_self(), fd);
 				
-				// decremento il contatore dei clients connessi al server
-				ce_less1( lock(&clients_counter_lock), "Fallimento della lock in un thread worker");
-				*connected_clients_counter -= 1;
+				// comunico la disconnessione di un client
+				ce_less1( writen(fd_pipe, (void*)&tmp, sizeof(int)), "Fallimento scrittura pipe thread worker");
+				// chiudo l'effettivo fd, rendendolo nuovamente disponibile al dispatcher
 				close(fd);
-				ce_less1( unlock(&clients_counter_lock), "Fallimento della unlock in un thread worker");
-				// rimuovo il fd dalla tabella
-				ce_less1(lock(&fd_table_lock), "Errore nella lock della tabella dei fd");
-				ce_less1(icl_hash_delete(fd_hash_table, (void*)&fd, free, freeFdQueue), "Errore rimozione fd dalla tabella");
-				ce_less1(unlock(&fd_table_lock), "Errore nella unlock della tabella dei fd");
 			}
 			free(hdr);
 		}
@@ -253,11 +260,7 @@ pthread_t* initializeWorkers(int number_workers, thread_arg_t *arg_struct){
 	return workers;
 }
 
-void printStats(stats_t *server_stats, icl_hash_t *file_hash_table){
-	int k;
-	icl_entry_t *entry;
-	char *key;
-	void *value;
+void printStats(stats_t *server_stats, storage_t *storage){
 	printf("---------\n");
 	printf("NUMERO FILES MEMORIZZATI: %d\n", server_stats->num_files);
 	printf("DIMENSIONE FILE STORAGE (MB): %d\n", server_stats->dim_storage);
@@ -265,22 +268,19 @@ void printStats(stats_t *server_stats, icl_hash_t *file_hash_table){
 	printf("MASSIMA DIMENSIONE DELLO STORAGE RAGGIUNTA DURANTE L'ESECUZIONE: %d\n", server_stats->max_dim_storage);
 	printf("NUMERO DI VOLTE IN CUI L'ALGORITMO DI CACHING È ENTRATO IN FUNZIONE: %d\n", server_stats->cache_substitutions);
 	printf("FILES MEMORIZZATI A FINE ESECUZIONE:\n");
-	icl_hash_foreach(file_hash_table, k, entry, key, value)
-		printf("%s\n", key);
+	storagePrint(storage);
 	printf("---------\n");
 }
 
 int main(int argc, char *argv[]){
+	storage_t *storage; // storage dei files
 	config_t server_config;
 	int signal_handler_pipe[2]; // pipe main/signal handler
 	int fd_pipe[2]; // pipe dispatcher/workers
 	queue_t *fd_queue; // coda dispatcher/workers
 	pthread_t *workers; // vettore di thread workers
-	icl_hash_t *file_hash_table; // tabella hash per lo storage
-	icl_hash_t *fd_hash_table; // tabella per associare a ciascun fd i files aperti
 	FILE *logfile; // file in cui stampare i messaggi di log 
 	stats_t *server_stats; // struct contenente le statistiche
-	cache_t *cache; // cache FIFO per i file
 	int socket_fd; // fd del socket del server
 	int connected_clients_counter = 0;
 	int fd_num = 0; // max fd attimo
@@ -320,22 +320,15 @@ int main(int argc, char *argv[]){
 	ce_less1(initializeSignalHandler(signal_handler_pipe), "Errore inizializzazione signal handler");
 	
 	// inizializzo lo storage
-	file_hash_table = icl_hash_create(server_config.num_buckets_file, NULL, NULL);
-	ce_null(file_hash_table, "Errore nell'inizializzazione dello storage");
-	
-	// inizializzo la tabella dei fd
-	fd_hash_table = icl_hash_create(server_config.num_buckets_file, NULL, NULL);
-	ce_null(fd_hash_table, "Errore nell'inizializzazione della tabella dei fd");
-	
-	// inizializzo la cache
-	cache = createCache(server_config.max_memory, server_config.max_num_files);
-	ce_null(cache, "Errore nell'inizializzazione della cache");
-	
+	storage = storageCreate(server_config.num_buckets_file, NULL, NULL, server_config.max_memory, server_config.max_num_files);
+	ce_null(storage, "Errore nell'inizializzazione dello storage");
+		
 	// inizializzo la struct delle statistiche
 	ce_null( server_stats = malloc(sizeof(stats_t)), "Errore creazione struct stats");
+	memset((void*)server_stats, '\0', sizeof(stats_t));
 	
 	// inizializzo il pool di workers
-	thread_arg_t arg_struct = {file_hash_table, fd_hash_table, cache, fd_queue, fd_pipe[1], &connected_clients_counter, logfile, server_stats};
+	thread_arg_t arg_struct = {storage, fd_queue, fd_pipe[1], logfile, server_stats};
 	ce_null(workers = initializeWorkers(server_config.thread_workers, &arg_struct), "Errore nell'inizializzazione dei thread");
 	
 	// inizializzo il server
@@ -401,26 +394,18 @@ int main(int argc, char *argv[]){
 			for(int fd = 0; fd <= fd_num; fd++){
 				if( FD_ISSET(fd, &rdset ) && (fd != fd_pipe[0]) && ( fd != signal_handler_pipe[0] ) ){
 					if( fd == socket_fd ){ // sock connect pronto
-						int *fd_connect;
-						queue_t *opened_files;
-						
-						ce_null(fd_connect = malloc(sizeof(int)), "Errore malloc nuovo fd");
-						ce_null(opened_files = queueCreate(), "Errore creazione coda nuovo fd");
-						ce_less1((*fd_connect) = accept(socket_fd, NULL, 0), "Errore nella accept");
+						int fd_connect;
+
+						ce_less1(fd_connect = accept(socket_fd, NULL, 0), "Errore nella accept");
 						
 						fprintf(logfile, "Ho accettato una connessione\n");
 						// aggiungo il fd alla tabella dei fd
-						ce_less1(lock(&fd_table_lock), "Errore nella lock della tabella dei fd");
-						ce_null(icl_hash_insert(fd_hash_table, (void*)fd_connect, (void*)opened_files), "Errore inserimento fd nella tabella");
-						ce_less1(unlock(&fd_table_lock), "Errore nella unlock della tabella dei fd");
 						// incremento il contatore dei clients connessi
-						ce_less1(lock(&clients_counter_lock), "Errore nella lock del clients counter");
 						connected_clients_counter += 1;
-						ce_less1(unlock(&clients_counter_lock), "Errore nella unlock del clients counter");
 						// aggiorno il set dei fd
-						FD_SET(*fd_connect, &set);
-						if( *fd_connect > fd_num ){
-							fd_num = *fd_connect;
+						FD_SET(fd_connect, &set);
+						if( fd_connect > fd_num ){
+							fd_num = fd_connect;
 						}
 					}
 					else{ // nuova richiesta di un client connesso
@@ -452,23 +437,27 @@ int main(int argc, char *argv[]){
 				hard_termination_flag = 1;
 			}
 			else{
-				FD_SET(new_fd, &set);
-				if( new_fd > fd_num ){
-					fd_num = new_fd;
+				if( new_fd == -1 ){
+					// decremento il contatore dei clients connessi
+					connected_clients_counter -= 1;
+				}
+				else{
+					FD_SET(new_fd, &set);
+					if( new_fd > fd_num ){
+						fd_num = new_fd;
+					}
 				}
 			}
 		}
 	}
 	// stampa stastiche 
-	printStats(server_stats, file_hash_table);
+	printStats(server_stats, storage);
 	// chiusura dei fd e deallocazione delle varie strutture
 	close(socket_fd);
 	unlink(server_config.socket_name);
 	terminateWorkers(fd_queue, workers, server_config.thread_workers);
 	queueDestroy(fd_queue, free);
-	destroyCache(cache);
-	icl_hash_destroy(file_hash_table, NULL, freeFile);
-	icl_hash_destroy(fd_hash_table, free, freeFdQueue);
+	storageDestroy(storage, NULL, freeFile);
 	free(server_stats);
 	close(fd_pipe[0]);
 	close(fd_pipe[1]);
