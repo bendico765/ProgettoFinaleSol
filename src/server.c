@@ -10,11 +10,11 @@
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <sys/un.h>
 
 #include "utils.h"
 #include "queue.h"
 #include "stats.h"
-#include "socket_utils.h"
 #include "thread_utils.h"
 #include "config_parser.h"
 #include "signal_handler.h"
@@ -488,6 +488,23 @@ void printStats(stats_t *server_stats, storage_t *storage){
 	printf("FILES MEMORIZZATI A FINE ESECUZIONE:\n");
 	storagePrint(storage);
 	printf("---------\n");
+}
+
+/*
+	La funzione prova a creare il socket di nome
+	sockname; ritorna il file descriptor della socket
+	se la creazione è avvenuta con successo, altrimenti 
+	imposta errno e ritorna -1
+*/
+int initializeServerAndStart(char *sockname, int max_connections){
+	int fd;
+	struct sockaddr_un sa;
+	if( (fd = socket(AF_UNIX, SOCK_STREAM, 0)) == -1 ) return -1;
+	strncpy(sa.sun_path, sockname, UNIX_PATH_MAX);
+	sa.sun_family = AF_UNIX;
+	if( bind(fd, (struct sockaddr *)&sa, sizeof(sa)) == -1 ) return -1;
+	if( listen(fd, max_connections) == -1 ) return -1;
+	return fd;
 }
 
 int main(int argc, char *argv[]){
