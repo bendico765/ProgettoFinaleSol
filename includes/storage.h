@@ -17,6 +17,8 @@ queue_t* storageInsert(storage_t *storage, void *key, void* value, int *err);
 int storageRemove(storage_t *storage, void *key, void (*free_key)(void*), void (*free_data)(void*));
 queue_t* storageEditFile(storage_t *storage, void *key, char *new_content, size_t file_new_size, int *err);
 void storageDestroy(storage_t *storage, void (*free_key)(void*), void (*free_data)(void*));
+int storageGetNumElements(storage_t *storage);
+int storageGetSizeElements(storage_t *storage);
 void storagePrint(storage_t *storage);
 
 #endif

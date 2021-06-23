@@ -130,6 +130,7 @@ queue_t* editFileInCache(cache_t *cache, file_t *file, size_t file_new_size, int
 		cache->cur_num_file -= 1;
 		queueInsert(expelled_files, (void*)expelled_file);
 	}
+	*err = 0;
 	return expelled_files;
 }
 

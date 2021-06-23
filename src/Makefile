@@ -1,21 +1,28 @@
-PARAMS = -Wall -std=c99 
+CC = gcc
 INCLUDES = -I ../includes
 LIBS = -lpthread
 DEFINES = -D_POSIX_C_SOURCE=200112L -D_GNU_SOURCE
+CFLAGS = -Wall -std=c99 $(INCLUDES) $(DEFINES)
+
+CLIENT_OBJS = client_utils.o utils.o client.o
+SERVER_OBJS = signal_handler.o config_parser.o utils.o thread_utils.o socket_utils.o queue.o server.o message.o storage.o icl_hash.o cache.o file.o
+TEST_CLIENT_OBJS = utils.o socket_utils.o testClient.o api.o message.o
 
 all:  client server testClient
 
 .PHONY: clean
 
-client: client_utils.c utils.c client.c
-	gcc $(PARAMS) $(INCLUDES) $(DEFINES) $^ -o $@
+client: $(CLIENT_OBJS)
+	$(CC) $(CFLAGS) $^ -o $@
 
-server: signal_handler.c config_parser.c utils.c thread_utils.c socket_utils.c queue.c server.c message.c storage.c icl_hash.c cache.c file.c
-	gcc $(PARAMS) $(INCLUDES) $(DEFINES) $^ -o $@ -lpthread
+server: $(SERVER_OBJS)
+	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
 	
-testClient: utils.c socket_utils.c testClient.c api.c message.c
-	gcc $(PARAMS) $(INCLUDES) $(DEFINES) $^ -o $@
-	
+testClient: $(TEST_CLIENT_OBJS)
+	$(CC) $(CFLAGS) $^ -o $@
+		
 clean:
 	@echo "Rimozione files"
 	-rm client server testClient
+	-rm *.o
+	-rm ../expelledFilesDir/*

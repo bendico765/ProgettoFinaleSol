@@ -41,42 +41,51 @@ typedef struct{
 	stats_t *server_stats; // struct delle statistiche
 } thread_arg_t;
 
-void openFileHandler(int fd, message_header_t *hdr, FILE *logfile, storage_t *storage, stats_t *server_stats){
-	fprintf(logfile, "THREAD [%ld]: openFile(%s, %d)\n", pthread_self(), hdr->filename, hdr->flags);
+void updateStats(storage_t *storage, stats_t *server_stats, int num_expelled_files){
+	server_stats->num_files = storageGetNumElements(storage);
+	if( server_stats->num_files > server_stats->max_num_files ) server_stats->max_num_files = server_stats->num_files;
+	server_stats->dim_storage = storageGetSizeElements(storage);
+	if( server_stats->dim_storage > server_stats->max_dim_storage ) server_stats->max_dim_storage = server_stats->dim_storage;
+	if( num_expelled_files > 0 ) server_stats->cache_substitutions += 1;	
+}
+
+void openFileHandler(int fd, message_t *msg, FILE *logfile, storage_t *storage, stats_t *server_stats){
+	fprintf(logfile, "THREAD [%ld]: openFile(%s, %d)\n", pthread_self(), msg->hdr->filename, msg->hdr->flags);
 	// controllo la validità del flag O_CREATE
-	if( hdr->flags != 0 && hdr->flags != 1 ){
+	if( msg->hdr->flags != 0 && msg->hdr->flags != 1 ){
 		fprintf(logfile, "THREAD [%ld]: Flag non valido\n", pthread_self());
-		sendMessageHeader(fd, INVALID_FLAG, NULL, 0);
+		sendMessage(fd, INVALID_FLAG, NULL, 0, 0, NULL);
 		return;
 	}
 	// controllo se O_CREATE = 0 ed il file non esiste
 	file_t *file;
 	ce_less1( lock(&storage_lock), "Errore lock storage openFile" );
-	file = (file_t*) storageFind(storage, hdr->filename);
-	if( hdr->flags == 0 ){
+	// cerco il file nello storage
+	file = (file_t*) storageFind(storage, msg->hdr->filename);
+	if( msg->hdr->flags == 0 ){
 		if( file == NULL ){
 			fprintf(logfile, "THREAD [%ld]: File inesistente\n", pthread_self());
-			sendMessageHeader(fd, INEXISTENT_FILE, NULL, 0);
+			sendMessage(fd, INEXISTENT_FILE, NULL, 0, 0, NULL);
 		}
 		else{
 			// imposto che il file è stato appena aperto
 			file->is_open = 1;
-			sendMessageHeader(fd, SUCCESS, NULL, 0);
+			sendMessage(fd, SUCCESS, NULL, 0, 0, NULL);
 		}
 	}
 	else{
 		// controllo se O_CREATE = 1 ed il file esiste già
 		if( file != NULL ){
 			fprintf(logfile, "THREAD [%ld]: File già esistente\n", pthread_self());
-			sendMessageHeader(fd, FILE_ALREADY_EXIST, NULL, 0);
+			sendMessage(fd, FILE_ALREADY_EXIST, NULL, 0, 0, NULL);
 		}
 		else{ // creo il file e lo apro
 			file_t *new_file;
 			queue_t *expelled_files;
 			int num_expelled_files;
-			int err = 0;
+			int err;
 			
-			new_file = generateFile(hdr->filename, NULL, 0);
+			new_file = generateFile(msg->hdr->filename, NULL, 0);
 			ce_null(new_file, "Errore generazione nuovo file");
 			
 			// inserisco il file nello storage
@@ -92,66 +101,277 @@ void openFileHandler(int fd, message_header_t *hdr, FILE *logfile, storage_t *st
 			
 			// aggiorno le statistiche
 			ce_less1( lock(&stats_lock), "Errore lock statistiche openFile" );
-			server_stats->num_files += 1;
-			if( server_stats->num_files > server_stats->max_num_files ) server_stats->max_num_files = server_stats->num_files;
-			if( num_expelled_files > 0 ) server_stats->cache_substitutions += 1;			
+			updateStats(storage, server_stats, num_expelled_files);
 			ce_less1( unlock(&stats_lock), "Errore unlock statistiche openFile" );
-
-
 
 			// dealloco gli eventuali files espulsi
 			queueDestroy(expelled_files, freeFile);
-			sendMessageHeader(fd, SUCCESS, NULL, 0);
+			sendMessage(fd, SUCCESS, NULL, 0, 0, NULL);
 		}
 	}
 	ce_less1( unlock(&storage_lock), "Errore unlock storage openFile" );
 	return;
 }
 
-void closeFileHandler(int fd, message_header_t *hdr, FILE *logfile, storage_t *storage){
-	fprintf(logfile, "THREAD [%ld]: closeFile(%s)\n", pthread_self(), hdr->filename);
+void closeFileHandler(int fd, message_t *msg, FILE *logfile, storage_t *storage){
+	fprintf(logfile, "THREAD [%ld]: closeFile(%s)\n", pthread_self(), msg->hdr->filename);
 	file_t *file;
 	
 	ce_less1( lock(&storage_lock), "Errore lock storage closeFile" );
-	file = (file_t*) storageFind(storage, hdr->filename);
+	// cerco il file nello storage
+	file = (file_t*) storageFind(storage, msg->hdr->filename);
 	if( file == NULL ){
 		fprintf(logfile, "THREAD [%ld]: File inesistente\n", pthread_self());
-		sendMessageHeader(fd, INEXISTENT_FILE, NULL, 0);
+		sendMessage(fd, INEXISTENT_FILE, NULL, 0, 0, NULL);
 	}
 	else{
 		file->freshly_opened = 0;
 		file->is_open = 0;
-		sendMessageHeader(fd, SUCCESS, NULL, 0);
+		sendMessage(fd, SUCCESS, NULL, 0, 0, NULL);
 	}
 	ce_less1( unlock(&storage_lock), "Errore unlock storage closeFile" );
 	return;
 }
 
-void removeFileHandler(int fd, message_header_t *hdr, FILE *logfile, storage_t *storage, stats_t *server_stats){
-	fprintf(logfile, "THREAD [%ld]: removeFile(%s)\n", pthread_self(), hdr->filename);
+void removeFileHandler(int fd, message_t *msg, FILE *logfile, storage_t *storage, stats_t *server_stats){
+	fprintf(logfile, "THREAD [%ld]: removeFile(%s)\n", pthread_self(), msg->hdr->filename);
 	file_t *file;
 	
-	ce_less1( lock(&storage_lock), "Errore lock storage closeFile" );
-	file = (file_t*) storageFind(storage, hdr->filename);
+	ce_less1( lock(&storage_lock), "Errore lock storage removeFile" );
+	// cerco il file nello storage
+	file = (file_t*) storageFind(storage, msg->hdr->filename);
 	if( file == NULL ){
 		fprintf(logfile, "THREAD [%ld]: File inesistente\n", pthread_self());
-		sendMessageHeader(fd, INEXISTENT_FILE, NULL, 0);
+		sendMessage(fd, INEXISTENT_FILE, NULL, 0, 0, NULL);
 	}
 	else{
 		// rimuovo il file dallo storage
-		storageRemove(storage, (void*)hdr->filename, NULL, freeFile);
+		storageRemove(storage, (void*)msg->hdr->filename, NULL, freeFile);
 		
 		// aggiorno le statistiche
 		ce_less1( lock(&stats_lock), "Errore lock statistiche removeFile" );
-		server_stats->num_files -= 1;
-		server_stats->dim_storage -= file->size;
+		updateStats(storage, server_stats, 0);
 		ce_less1( unlock(&stats_lock), "Errore unlock statistiche removeFile" );
 		
-		sendMessageHeader(fd, SUCCESS, NULL, 0);
+		sendMessage(fd, SUCCESS, NULL, 0, 0, NULL);
 	}
-	ce_less1( unlock(&storage_lock), "Errore unlock storage closeFile" );
+	ce_less1( unlock(&storage_lock), "Errore unlock storage removeFile" );
 	return;
 }
+
+void writeFileHandler(int fd, message_t *msg, FILE *logfile, storage_t *storage, stats_t *server_stats){
+	fprintf(logfile, "THREAD [%ld]: writeFile(%s)\n", pthread_self(), msg->hdr->filename);
+	file_t *file;
+	
+	ce_less1( lock(&storage_lock), "Errore lock storage closeFile" );
+	
+	// cerco il file nello storage
+	file = (file_t*) storageFind(storage, msg->hdr->filename);
+	if( file == NULL ){
+		fprintf(logfile, "THREAD [%ld]: File inesistente\n", pthread_self());
+		sendMessage(fd, INEXISTENT_FILE, NULL, 0, 0, NULL);
+	}
+	else{
+		// controllo se la precedente operazione era una openFile(pathname, O_CREATE);
+		if( file->freshly_opened != 1 ){ 
+			fprintf(logfile, "THREAD [%ld]: File non aperto\n", pthread_self());
+			sendMessage(fd, FILE_NOT_OPENED, NULL, 0, 0, NULL);
+		}
+		else{
+			int err;
+			int num_expelled_files;
+			queue_t *expelled_files;
+			message_t *file_msg;
+			
+			// segnalo al client di mandare il contenuto del file
+			sendMessage(fd, SUCCESS, NULL, 0, 0, NULL);
+			
+			// ricevo il contenuto del messaggio
+			file_msg = receiveMessage(fd);
+			
+			// segno che il file è stato aperto
+			file->freshly_opened = 0;
+			
+			// espello eventuali file dalla cache
+			expelled_files = storageEditFile(storage, (void*)msg->hdr->filename, file_msg->cnt->content, file_msg->cnt->size, &err);
+			
+			if( err == 0 ){ // modifica avvenuta con successo
+				num_expelled_files = queueLen(expelled_files);
+				
+				// aggiorno le statistiche
+				ce_less1( lock(&stats_lock), "Errore lock statistiche writeFile" );
+				updateStats(storage, server_stats, num_expelled_files);	
+				ce_less1( unlock(&stats_lock), "Errore unlock statistiche writeFile" );
+				
+				if( num_expelled_files > 0 ){ // mando i files espulsi al client
+					file_t *expelled_file;
+					fprintf(logfile, "THREAD [%ld]: Ho espulso %d files dallo storage\n", pthread_self(), num_expelled_files);
+					sendMessage(fd, CACHE_SUBSTITUTION, NULL, num_expelled_files, 0, NULL);
+					
+					// mando i files espulsi al client
+					while( (expelled_file = (file_t*) queueRemove(expelled_files)) != NULL ){
+						sendMessage(fd, CACHE_SUBSTITUTION, expelled_file->pathname, 0, expelled_file->size, expelled_file->content);
+						freeFile(expelled_file);
+					}
+					
+				}
+				else{
+					sendMessage(fd, SUCCESS, NULL, 0, 0, NULL);
+				}
+			}
+			else{
+				if( err == -2 ){ // la modifica è troppo grande per la cache
+					sendMessage(fd, FILE_TOO_BIG, NULL, 0, 0, NULL);
+				}
+				else{ // errori gravi
+					perror("Errore storageEditFile writeFile");
+					exit(-1);
+				}
+			}
+			freeMessage(file_msg);
+			queueDestroy(expelled_files, freeFile);
+		}
+	}
+	ce_less1( unlock(&storage_lock), "Errore unlock storage writeFile" );
+	return;
+}
+
+void readFileHandler(int fd, message_t *msg, FILE *logfile, storage_t *storage){
+	fprintf(logfile, "THREAD [%ld]: readFile(%s)\n", pthread_self(), msg->hdr->filename);
+	file_t *file;
+	
+	ce_less1( lock(&storage_lock), "Errore lock storage readFile" );
+	// cerco il file nello storage
+	file = (file_t*) storageFind(storage, msg->hdr->filename);
+	if( file == NULL ){
+		fprintf(logfile, "THREAD [%ld]: File inesistente\n", pthread_self());
+		sendMessage(fd, INEXISTENT_FILE, NULL, 0, 0, NULL);
+	}
+	else{
+		// segno che il file è stato letto
+		file->freshly_opened = 0;
+		// mando il file al client
+		sendMessage(fd, SUCCESS, file->pathname, 0, file->size, file->content);
+	}
+	ce_less1( unlock(&storage_lock), "Errore unlock storage readFile" );
+	return;
+}
+
+void readNFileHandler(int fd, message_t *msg, FILE *logfile, storage_t *storage){
+	fprintf(logfile, "THREAD [%ld]: readNFile(%d)\n", pthread_self(), msg->hdr->flags);
+	int num_requested_files = msg->hdr->flags;
+	int num_files_available = storageGetNumElements(storage);
+	
+	ce_less1( lock(&storage_lock), "Errore lock storage readFile" );
+	
+	if( num_requested_files <= 0 || num_requested_files > num_files_available ){ // leggo e mando tutti i files dello storage
+		file_t *file;
+		node_t *tmp = storage->cache->queue->head_node;
+		// mando il numero di files disponibili
+		sendMessage(fd, READ_N_FILE_OPT, NULL, num_files_available, 0, NULL);
+		// mando i files
+		while( tmp != NULL ){
+			file = (file_t*)tmp->value;
+			sendMessage(fd, READ_N_FILE_OPT, file->pathname, 0, file->size, file->content);
+			tmp = tmp->next_node;
+		}
+	}
+	else{ // mando il numero di files richiesti
+		file_t *file;
+		node_t *tmp = storage->cache->queue->head_node;
+		// mando il numero di files disponibili
+		sendMessage(fd, READ_N_FILE_OPT, NULL, num_requested_files, 0, NULL);
+		// mando i files
+		for(int i = 0; i < num_requested_files; i++){
+			file = (file_t*)tmp->value;
+			sendMessage(fd, READ_N_FILE_OPT, file->pathname, 0, file->size, file->content);
+			tmp = tmp->next_node;
+		}
+	}
+	
+	ce_less1( unlock(&storage_lock), "Errore unlock storage readFile" );
+	return;
+}
+
+void appendToFileHandler(int fd, message_t *msg, FILE *logfile, storage_t *storage, stats_t *server_stats){
+	fprintf(logfile, "THREAD [%ld]: appendToFile(%s)\n", pthread_self(), msg->hdr->filename);
+	file_t *file;
+	
+	ce_less1( lock(&storage_lock), "Errore lock storage appendToFile" );
+	// cerco il file nello storage
+	file = (file_t*) storageFind(storage, msg->hdr->filename);
+	if( file == NULL ){
+		fprintf(logfile, "THREAD [%ld]: File inesistente\n", pthread_self());
+		sendMessage(fd, INEXISTENT_FILE, NULL, 0, 0, NULL);
+	}
+	else{
+		int err;
+		int num_expelled_files;
+		queue_t *expelled_files;
+		message_t *append_msg;
+		char *new_content;
+		size_t new_size;
+		
+		// segnalo al client di mandare la modifica
+		sendMessage(fd, SUCCESS, NULL, 0, 0, NULL);
+		
+		// ricevo le modifiche da apportare
+		append_msg = receiveMessage(fd);
+		
+		// segno che il file è stato modificato
+		file->freshly_opened = 0;
+		
+		// faccio l'operazione di append
+		new_size = file->size + append_msg->cnt->size;
+		ce_null(new_content = malloc(new_size), "Errore malloc");
+		memset(new_content, '\0', new_size);
+		strcat(new_content, file->content);
+		strcat(new_content, append_msg->cnt->content);
+		
+		// espello eventuali file dalla cache
+		expelled_files = storageEditFile(storage, (void*)msg->hdr->filename, new_content, new_size, &err);
+		
+		if( err == 0 ){ // modifica avvenuta con successo
+			num_expelled_files = queueLen(expelled_files);
+			
+			// aggiorno le statistiche
+			ce_less1( lock(&stats_lock), "Errore lock statistiche appendToFile" );
+			updateStats(storage, server_stats, num_expelled_files);	
+			ce_less1( unlock(&stats_lock), "Errore unlock statistiche appendToFile" );
+			
+			if( num_expelled_files > 0 ){ // mando i files espulsi al client
+				file_t *expelled_file;
+				fprintf(logfile, "THREAD [%ld]: Ho espulso %d files dallo storage\n", pthread_self(), num_expelled_files);
+				sendMessage(fd, CACHE_SUBSTITUTION, NULL, num_expelled_files, 0, NULL);
+				
+				// mando i files espulsi al client
+				while( (expelled_file = (file_t*) queueRemove(expelled_files)) != NULL ){
+					sendMessage(fd, CACHE_SUBSTITUTION, expelled_file->pathname, 0, expelled_file->size, expelled_file->content);
+					freeFile(expelled_file);
+				}
+			}
+			else{
+				sendMessage(fd, SUCCESS, NULL, 0, 0, NULL);
+			}
+		}
+		else{
+			if( err == -2 ){ // la modifica è troppo grande per la cache
+				sendMessage(fd, FILE_TOO_BIG, NULL, 0, 0, NULL);
+			}
+			else{ // errori gravi
+				perror("Errore storageEditFile appendToFile");
+				exit(-1);
+			}
+		}
+		free(new_content);
+		freeMessage(append_msg);
+		queueDestroy(expelled_files, freeFile);
+	}
+	ce_less1( unlock(&storage_lock), "Errore unlock storage appendToFile" );
+	return;
+}
+
+
 
 void* workerThread(void* arg){
 	storage_t *storage = ((thread_arg_t*)arg)->storage;
@@ -176,33 +396,34 @@ void* workerThread(void* arg){
 			termination_flag = 1;
 		}
 		else{ // ricevo l'header del messaggio
-			int res;
-			message_header_t *hdr = malloc(sizeof(message_header_t));
-			ce_null(hdr, "Fallimento malloc header in thread worker");
-			res = receiveMessageHeader(fd, hdr);
-			if( res > 0 ){ // messaggio arrivato correttamente
+			message_t *request = receiveMessage(fd);
+			if( request != NULL ){ // messaggio arrivato correttamente
 				// servo il file descriptor
-				switch( hdr->option ){
+				switch( request->hdr->option ){
 					case OPEN_FILE_OPT:
-						openFileHandler(fd, hdr, logfile, storage, server_stats);
+						openFileHandler(fd, request, logfile, storage, server_stats);
 						break;
 					case CLOSE_FILE_OPT:
-						closeFileHandler(fd, hdr, logfile, storage);
+						closeFileHandler(fd, request, logfile, storage);
 						break;
 					case READ_FILE_OPT:
+						readFileHandler(fd, request, logfile, storage);
 						break;
 					case READ_N_FILE_OPT:
+						readNFileHandler(fd, request, logfile, storage);
 						break;
 					case WRITE_FILE_OPT:
+						writeFileHandler(fd, request, logfile, storage, server_stats);
 						break;
 					case APPEND_TO_FILE_OPT:
+						appendToFileHandler(fd, request, logfile, storage, server_stats);
 						break;
 					case REMOVE_FILE_OPT:
-						removeFileHandler(fd, hdr, logfile, storage, server_stats);
+						removeFileHandler(fd, request, logfile, storage, server_stats);
 						break;
 					default:
 						fprintf(logfile, "THREAD [%ld]: opzione invalida\n", pthread_self());
-						sendMessageHeader(fd, INVALID_OPTION, NULL, 0);
+						sendMessage(fd, INVALID_OPTION, NULL, 0, 0, NULL);
 						break;
 				
 				}
@@ -210,11 +431,8 @@ void* workerThread(void* arg){
 				ce_less1( writen(fd_pipe, (void*)&fd, sizeof(int)), "Fallimento scrittura pipe thread worker");
 				fprintf(logfile, "THREAD [%ld]: ho scritto fd [%d] nella pipe\n", pthread_self(), fd);
 			}
-			else{ // rimozione dei dati del client dalle strutture interne
+			else{ // disconnessione del client
 				int tmp = -1;
-				if( res == -1 ){
-					fprintf(logfile, "THREAD [%ld]: (%s) durante la lettura dell'header di [%d]\n", pthread_self(), strerror(errno), fd);
-				}
 				fprintf(logfile, "THREAD [%ld]: chiudo la connessione con [%d]\n", pthread_self(), fd);
 				
 				// comunico la disconnessione di un client
@@ -222,7 +440,7 @@ void* workerThread(void* arg){
 				// chiudo l'effettivo fd, rendendolo nuovamente disponibile al dispatcher
 				close(fd);
 			}
-			free(hdr);
+			freeMessage(request);
 		}
 	}
 	return 0;

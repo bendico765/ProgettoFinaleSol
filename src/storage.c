@@ -1,5 +1,6 @@
 #include "storage.h"
 #include <stdlib.h>
+#include <string.h>
 
 /*
 	Crea lo storage allocando le strutture dati interne
@@ -83,7 +84,12 @@ int storageRemove(storage_t *storage, void *key, void (*free_key)(void*), void (
 }
 
 /*
-
+	La variabile err viene settata per dare maggior informazioni
+	su eventuali errori, e può assumere i seguenti valori:
+	 0: operazione effettuata con successo
+	-1: parametri invalidi
+	-2: il file modificato non entrerebbe nella cache
+	-3: errore nell'allocazione dinamica
 */
 queue_t* storageEditFile(storage_t *storage, void *key, char *new_content, size_t file_new_size, int *err){
 	file_t *file;
@@ -102,11 +108,19 @@ queue_t* storageEditFile(storage_t *storage, void *key, char *new_content, size_
 		icl_hash_delete(storage->file_hash, (void*)expelled_file->pathname, NULL, NULL);
 		tmp = tmp->next_node;
 	}
-	// aggiorno il dato
-	if(file->content != NULL) free(file->content);
-	file->content = new_content;
 	// aggiorno la dimensione della cache
 	storage->cache->cur_size += (file_new_size - file->size);
+	// dealloco le informazioni precedenti
+	if(file->content != NULL) free(file->content);
+	// aggiorno il file con il nuovo contenuto
+	file->content = malloc(file_new_size);
+	if( file->content == NULL ){
+		*err = -3;
+		return NULL;
+	}
+	memcpy(file->content, new_content, file_new_size);
+	file->size = file_new_size;
+	
 	return expelled_files;
 }
 
@@ -121,6 +135,20 @@ void storageDestroy(storage_t *storage, void (*free_key)(void*), void (*free_dat
 		icl_hash_destroy(storage->file_hash, free_key, free_data);
 		free(storage);
 	}
+}
+
+int storageGetNumElements(storage_t *storage){
+	if( storage == NULL || storage->cache == NULL ){
+		return 0;
+	}
+	return storage->cache->cur_num_file;
+}
+
+int storageGetSizeElements(storage_t *storage){
+	if( storage == NULL || storage->cache == NULL ){
+		return 0;
+	}
+	return storage->cache->cur_size;
 }
 
 /*

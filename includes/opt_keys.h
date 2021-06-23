@@ -13,11 +13,11 @@ typedef enum{
 	// messaggi del server
 	FILE_ALREADY_EXIST = 7, // file già esistente (in caso di creazione con O_CREAT)
 	INEXISTENT_FILE = 8, // file non esistente
-	PATHNAME_TOO_LONG = 9, // pathname supera la lunghezza massima
-	FILE_NOT_OPENED = 10, // tentativo di scrittura su file non aperto
-	INVALID_FLAG = 11, // flag non valido
-	CACHE_SUBSTITUTION = 12, // arrivo del file espulso dalla cache
-	INVALID_OPTION = 13, // opzione header non valida
+	FILE_NOT_OPENED = 9, // tentativo di scrittura su file non aperto
+	INVALID_FLAG = 10, // flag non valido
+	CACHE_SUBSTITUTION = 11, // arrivo del file espulso dalla cache
+	INVALID_OPTION = 12, // opzione header non valida
+	FILE_TOO_BIG = 13, // file troppo grande per entrare in cache
 	SUCCESS = 14 // operazione terminata con successo
 } opt_keys;
 
