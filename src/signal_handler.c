@@ -1,5 +1,6 @@
 #include "signal_handler.h"
 #include <utils.h>
+#include <string.h>
 #include <pthread.h>
 #include <stdlib.h>
 #include <errno.h>
@@ -39,14 +40,19 @@ void* threadSignalHandler(void *arg){
 }
 
 int initializeSignalHandler(int signal_handler_pipe[]){
-	sigset_t *set = malloc(sizeof(sigset_t));
-	ce_null(set, "Errore malloc");
+	struct sigaction s;
+	sigset_t *set;
+	ce_null(set = malloc(sizeof(sigset_t)), "Errore malloc");
 	// maschero SIGINT. SIGQUIT e SIGHUP
 	ce_val(sigemptyset(set), -1, -1);
 	ce_val(sigaddset(set, SIGINT), -1, -1);
 	ce_val(sigaddset(set, SIGQUIT), -1, -1);
 	ce_val(sigaddset(set, SIGHUP), -1, -1);
 	ce_not_val(pthread_sigmask(SIG_BLOCK, set, NULL), 0, -1);
+	// ignoro SIGPIPE
+	memset(&s, 0, sizeof(s));
+	s.sa_handler= SIG_IGN;
+	sigaction(SIGPIPE,&s,NULL);
 	// lancio il thread per il signal handling
 	struct signal_handler_arg_t *args = malloc(sizeof(signal_handler_arg_t));
 	args->set = set;
