@@ -133,7 +133,7 @@ int writeExpelledFilesToDir(int fd, const char* dirname, int num_files){
 */
 int openConnection(const char* sockname, int msec, const struct timespec abstime){
 	if( msec >= 1000 ){ // massimo valore in msec consentito
-		errno = EINTR;
+		errno = EINVAL;
 		return -1;
 	}
 	if( saved_fd != -1 ){ // esiste già una connessione aperta
@@ -149,7 +149,7 @@ int openConnection(const char* sockname, int msec, const struct timespec abstime
 	sa.sun_family = AF_UNIX;
 	if( connect(socket_fd, (struct sockaddr*)&sa, sizeof(sa)) != 0){
 		// faccio i vari tentativi
-		int conn_result;
+		int conn_result = -1;
 		struct timespec real_time;
 		struct timespec first_delay = {0, msec*1000000};
 		
@@ -401,7 +401,7 @@ int appendToFile(const char* pathname, void* buf, size_t size, const char* dirna
 	recv_message = receiveMessage(saved_fd);
 	if( recv_message == NULL ) return -1;
 	if( recv_message->hdr->option == SUCCESS ){ // permesso di append accordato
-		free(recv_message);
+		freeMessage(recv_message);
 		// mando le modifiche da appendere
 		if( sendMessage(saved_fd, APPEND_TO_FILE_OPT, pathname, 0, size, buf) == -1 ) return -1;
 		// ricevo l'esito dell'operazione
@@ -428,8 +428,7 @@ int appendToFile(const char* pathname, void* buf, size_t size, const char* dirna
 		errno = ENOENT;
 		res = -1;
 	}
-	
-	free(recv_message);
+	freeMessage(recv_message);
 	free(dir);
 	return res;
 }
@@ -477,8 +476,13 @@ int readNFiles(int N, const char* dirname){
 	errno viene settato opportunamente.
 */
 int closeFile(const char* pathname){
-	int res;
+	int res = 0;
 	message_t *recv_message;
+	// controllo validità di pathname
+	if( pathname == NULL ){
+		errno = EINVAL;
+		return -1;
+	}
 	// mando la richiesta di chisura
 	if( sendMessage(saved_fd, CLOSE_FILE_OPT, pathname, 0, 0, NULL) == -1 ) return -1;
 	// ottengo la risposta dal server
@@ -507,13 +511,17 @@ int closeFile(const char* pathname){
 	fallimento, errno viene settato opportunamente.
 */
 int closeConnection(const char* sockname){
-	if( strncmp(saved_sockname, sockname, UNIX_PATH_MAX) != 0 ){
+	// controllo validità di pathname
+	if( sockname == NULL ){
+		errno = EINVAL;
+		return -1;
+	}
+	// controllo che corrisponda al socket name aperto
+	if( saved_fd == -1 || strncmp(saved_sockname, sockname, UNIX_PATH_MAX) != 0 ){
 		errno = EBADF;
 		return -1;
 	}
-	if( close(saved_fd) == -1 ){
-		return -1;
-	}
+	if( close(saved_fd) == -1 ) return -1;
 	saved_fd = -1;
 	return 0;
 }

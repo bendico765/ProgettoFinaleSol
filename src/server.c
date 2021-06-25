@@ -303,6 +303,7 @@ int readNFileHandler(int fd, message_t *msg, FILE *logfile, storage_t *storage){
 			while( tmp != NULL && res == 0){
 				file = (file_t*)tmp->value;
 				res = sendMessage(fd, READ_N_FILE_OPT, file->pathname, 0, file->size, file->content);
+				if( res != 0 ) break;
 				tmp = tmp->next_node;
 			}
 		}
@@ -317,6 +318,7 @@ int readNFileHandler(int fd, message_t *msg, FILE *logfile, storage_t *storage){
 			for(int i = 0; i < num_requested_files && res == 0; i++){
 				file = (file_t*)tmp->value;
 				res = sendMessage(fd, READ_N_FILE_OPT, file->pathname, 0, file->size, file->content);
+				if( res != 0 ) break;
 				tmp = tmp->next_node;
 			}
 		}
