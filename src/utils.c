@@ -98,3 +98,22 @@ ssize_t writen(int fd, void *ptr, size_t n) {
    }
    return(n - nleft); /* return >= 0 */
 }
+
+/*
+	Dato un path assoluto, estrapola il nome del file riferito
+*/
+char *absolutePathToFilename(char *absolute_path){
+	char *token;
+	char *old_token;
+	char *copy;
+	char *res;
+	if( (copy = strdup(absolute_path)) == NULL) return NULL;
+	token = strtok(copy, "/");
+	while( token != NULL ){
+		old_token = token;
+		token = strtok(NULL, "/");
+	}
+	res = strdup(old_token);
+	free(copy);
+	return res;
+}

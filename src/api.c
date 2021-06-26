@@ -56,25 +56,6 @@ char* getFileContent(const char* pathname, size_t *size){
 	return NULL;
 }
 
-/*
-	Dato un path assoluto, estrapola il nome del file riferito
-*/
-char *absolutePathToFilename(char *absolute_path){
-	char *token;
-	char *old_token;
-	char *copy;
-	char *res;
-	if( (copy = strdup(absolute_path)) == NULL) return NULL;
-	token = strtok(copy, "/");
-	while( token != NULL ){
-		old_token = token;
-		token = strtok(NULL, "/");
-	}
-	res = strdup(old_token);
-	free(copy);
-	return res;
-}
-
 int writeExpelledFilesToDir(int fd, const char* dirname, int num_files){
 	message_t *recv_message;
 
@@ -304,9 +285,11 @@ int writeFile(const char* pathname, const char* dirname){
 			case CACHE_SUBSTITUTION: // file espulsi dallo storage
 				errno = 0;
 				res = writeExpelledFilesToDir(saved_fd, dirname, recv_message->hdr->flags);
+				break;
 			case FILE_TOO_BIG: // file troppo grande per la cache
 				errno = EFBIG;
 				res = -1;
+				break;
 			default:
 				break;
 		}
@@ -448,7 +431,8 @@ int readNFiles(int N, const char* dirname){
 	DIR *dir;
 	message_t *recv_message;
 	// controllo l'esistenza dell'eventuale dirname
-	if( dirname == NULL || (dir = opendir(dirname)) == NULL ){
+	dir = NULL;
+	if( dirname != NULL && (dir = opendir(dirname)) == NULL ){
 		errno = ENOENT;
 		return -1;
 	}
@@ -463,7 +447,7 @@ int readNFiles(int N, const char* dirname){
 	if( writeExpelledFilesToDir(saved_fd, dirname, num_files) == -1 ) return -1;
 	
 	freeMessage(recv_message);
-	free(dir);
+	if(dir != NULL) free(dir);
 	return num_files;
 }
 

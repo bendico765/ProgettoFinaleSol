@@ -14,6 +14,7 @@
 
 int isIntNumber(const char* s, int* n);
 int isNumber(const char* s, long* n);
+char *absolutePathToFilename(char *absolute_path);
 
 /** Evita letture parziali
  *
