@@ -14,7 +14,7 @@ SERVER_OBJS = signal_handler.o config_parser.o utils.o thread_utils.o queue.o se
 
 all:  $(BIN_FOLDER)/client $(BIN_FOLDER)/server
 
-.PHONY: clean
+.PHONY: clean test1 test2 serverStart
 
 # generazione client
 $(BIN_FOLDER)/client: $(patsubst %.o,$(OBJS_FOLDER)/%.o,$(CLIENT_OBJS))
@@ -27,9 +27,20 @@ $(BIN_FOLDER)/server: $(patsubst %.o,$(OBJS_FOLDER)/%.o,$(SERVER_OBJS))
 # generazione file oggetto
 $(OBJS_FOLDER)/%.o: $(SRC_FOLDER)/%.c
 	$(CC) $(CFLAGS) $^ -c -o $@
+	
+# PHONY TARGETS
 		
 clean:
 	@echo "Rimozione files"
 	-rm -f $(OBJS_FOLDER)/*.o
 	-rm -f $(BIN_FOLDER)/*
 	-rm -f ./expelledFilesDir/*
+	
+test1:
+	@echo "Test1"
+	
+test2:
+	@echo "Test2"
+	
+serverStart:
+	valgrind -s ./bin/server ./config/config.txt
