@@ -21,4 +21,6 @@ void* queueRemove(queue_t *queue);
 int queueIsEmpty(queue_t *queue);
 void* queueRemoveFirstOccurrance(queue_t *queue, void* value, int(*value_compare)(void*, void*));
 int queueLen(queue_t *queue);
+queue_t* queueGetNElems(queue_t *queue, int N);
+
 #endif

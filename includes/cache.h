@@ -16,6 +16,7 @@ cache_t* createCache(size_t max_size, size_t max_num_file);
 queue_t* insertFileIntoCache(cache_t *cache, file_t *file, int *err);
 queue_t* editFileInCache(cache_t *cache, file_t *file, size_t file_new_size, int *err);
 int removeFromCache(cache_t *cache, file_t *file);
+queue_t* getNElemsFromCache(cache_t *cache, int N);
 void destroyCache(cache_t *cache);
 
 #endif /* _CACHE_H */

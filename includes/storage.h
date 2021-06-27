@@ -19,6 +19,7 @@ queue_t* storageEditFile(storage_t *storage, void *key, char *new_content, size_
 void storageDestroy(storage_t *storage, void (*free_key)(void*), void (*free_data)(void*));
 int storageGetNumElements(storage_t *storage);
 int storageGetSizeElements(storage_t *storage);
+queue_t* storageGetNElems(storage_t *storage, int N);
 void storagePrint(storage_t *storage);
 
 #endif

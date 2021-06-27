@@ -6,14 +6,14 @@
 #include <stddef.h>
 
 typedef struct{
-	opt_keys option;
-	char filename[PATH_LEN_MAX]; 
-	int flags;
+	opt_keys option; // codice dell'operazione
+	char filename[PATH_LEN_MAX]; // percorso che identifica il file
+	int flags; // eventuali flags legati all'operazione
 } message_header_t;
 
 typedef struct{
-	size_t size;
-	char *content;
+	size_t size; // grandezza (in bytes) del contenuto
+	char *content; // contenuto effetivo del file
 } message_content_t;
 
 typedef struct{
