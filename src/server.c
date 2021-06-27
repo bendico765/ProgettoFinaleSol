@@ -367,8 +367,7 @@ int appendToFileHandler(int fd, message_t *msg, FILE *logfile, storage_t *storag
 		
 		// faccio l'operazione di append
 		new_size = file->size + append_msg->cnt->size;
-		ce_null(new_content = malloc(new_size), "Errore malloc");
-		memset(new_content, '\0', new_size);
+		ce_null(new_content = calloc(new_size, sizeof(char)), "Errore malloc");
 		strcat(new_content, file->content);
 		strcat(new_content, append_msg->cnt->content);
 		

@@ -117,3 +117,13 @@ char *absolutePathToFilename(char *absolute_path){
 	free(copy);
 	return res;
 }
+
+/*
+	Dato il percorso relativo ad un file, prova a risolvere il percorso
+	assoluto e lo restituisce in caso di successo, o restituisce NULL
+	in caso di errore (errno settato). La memoria per il path assoluto 
+	è allocata dinamicamente e deve essere successivamente liberata.
+*/
+char *relativeToAbsolutePath(char *relative_path){
+	return realpath(relative_path, NULL);
+}

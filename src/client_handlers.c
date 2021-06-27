@@ -12,8 +12,17 @@
 #include "queue.h"
 #include "api.h"
 
-/**/
+/*  
+	Funzioni di utilità usate dalle implementazioni
+	degli handlers delle opzioni
+*/
 
+/*
+	La funzione fa il parsing degli argomenti in optarg
+	usando ',' come carattere delimitatore e restituisce 
+	una coda contenente i singoli argomenti.
+	In caso di errore viene restituito NULL.
+*/
 queue_t* parseOptionArg(char *optarg){
 	queue_t *queue;
 	char *temp;
@@ -33,36 +42,52 @@ queue_t* parseOptionArg(char *optarg){
 	return queue;
 }
 
+/*
+	La funzione prende num_files files dalla directory source_dir (visitando 
+	ricorsivamente anche le sottocartelle) e ne salva il percorso assoluto
+	in pathnames_queue.
+	Se num_files è uguale a -1, vengono presi tutti i files.
+	
+	Restituisce 0 in caso di successo, -1 in caso di errore (errno settato);
+*/
 int getPathnamesFromDir(char *source_dir, int *num_files, queue_t *pathnames_queue){
 	DIR *dir;
 	struct dirent *file;
+	char *relative_pathname;
+	char *absolute_pathname;
 	
+	// apertura della cartella sorgente dei files
 	dir = opendir(source_dir);
 	if( dir == NULL ) return -1;
 	
 	errno = 0;
+	// lettura di tutti i files (e directory) della cartella
 	while( (file = readdir(dir)) != NULL && *num_files != 0){
-		// vado avanti se si tratta delle directory ./ e ../
+		// andiamo avanti se si tratta delle directory ./ e ../
 		if(strcmp(file->d_name, ".") == 0 || strcmp(file->d_name, "..") == 0){
 			continue;
         }
+        // si ricava il pathname relativo del file
+        relative_pathname = (char*) calloc(strlen(source_dir) + strlen(file->d_name) + 2, sizeof(char));
+        if( relative_pathname == NULL ) return -1;
+        strcat(relative_pathname,source_dir);
+        strcat(relative_pathname,"/");
+        strcat(relative_pathname,file->d_name);
+        
         if( file->d_type != DT_DIR ){ // non è una directory
-        	char* filename = strdup(file->d_name);
-        	if( filename == NULL ) return -1;
-        	if( queueInsert(pathnames_queue, (void*)filename) == NULL ){
+        	// si ricava il pathname assoluto del file
+        	absolute_pathname = relativeToAbsolutePath(relative_pathname);
+        	if( absolute_pathname == NULL ) return -1;
+        	// il pathname assoluto viene inserito nella coda
+        	if( queueInsert(pathnames_queue, (void*)absolute_pathname) == NULL ){
         		return -1;
         	}
         	if( *num_files != -1 ) *num_files -= 1;
         }
         else{ // è una directory da visitare ricorsivamente
-        	char *new_source = (char*) malloc(sizeof(char) * (strlen(source_dir) + strlen(file->d_name) + 2));
-            strcat(new_source,source_dir);
-            strcat(new_source,"/");
-            strcat(new_source,file->d_name);
-        	
-        	if( getPathnamesFromDir(new_source, num_files, pathnames_queue) == -1 ) return -1;
-        	free(new_source);
+        	if( getPathnamesFromDir(relative_pathname, num_files, pathnames_queue) == -1 ) return -1;
         }
+        free(relative_pathname);
 	}
 	if( errno != 0 ) return -1;
 	
@@ -70,115 +95,150 @@ int getPathnamesFromDir(char *source_dir, int *num_files, queue_t *pathnames_que
 	return 0;
 }
 
+/*
+	La funzione scrive i files (identificati dai loro percorsi assoluti in files_list) 
+	sul server (identificato da socket_name) e salva gli eventuali files espulsi nella 
+	directory expelled_files_dirname. Le richieste di scrittura su server si intervallano 
+	di un tempo pari a delay_time. Se print_flag è diverso da 0, sono abilitate le stampe 
+	delle operazioni sullo standard output.
+	
+	Nel caso in cui sia stato impossibile scrivere un file, la funzione non fallisce, ma 
+	prova a scrivere gli altri file rimasti.
+	
+	La funzione restituisce -1 in caso di errore, 0 in caso di successo.
+*/
 int writeFilesToServer(char *socket_name, queue_t *files_list, char *expelled_files_dirname, struct timespec *delay_time, int print_flag){
-	char *filename;
+	char *absolute_pathname;
 	struct stat statbuf;
 	
-	// provo ad aprire la connessione verso il server
+	// apriamo la connessione verso il server
 	if( openConnection(socket_name, 0, (const struct timespec) {0,0}) == -1){
 		perror("Impossibile connettersi al server");
 		return -1;
 	}
 	
-	// scrivo i files sul server
-	while( (filename = (char*) queueRemove(files_list)) != NULL){
-		// introduco il ritardo tra due richieste consecutive
+	// scriviamo i files sul server
+	while( (absolute_pathname = (char*) queueRemove(files_list)) != NULL){
+		// ritardo tra due richieste consecutive
 		nanosleep(delay_time, NULL);
-		// creo il nuovo file
-		if( openFile(filename, 1) == -1 ){
-			fprintf(stderr, "Impossibile creare il file %s: %s\n", filename, strerror(errno));
-			free(filename);
+		// creazione del nuovo file
+		if( openFile(absolute_pathname, 1) == -1 ){
+			fprintf(stderr, "Impossibile creare il file %s: %s\n", absolute_pathname, strerror(errno));
+			free(absolute_pathname);
 			continue;
 		}
 		// file creato correttamente
-		if( writeFile(filename, expelled_files_dirname) == -1 ){
-			fprintf(stderr, "Errore durante la scrittura del file %s: %s\n", filename, strerror(errno));
-			free(filename);
+		if( writeFile(absolute_pathname, expelled_files_dirname) == -1 ){
+			fprintf(stderr, "Errore durante la scrittura del file %s: %s\n", absolute_pathname, strerror(errno));
+			free(absolute_pathname);
 			continue;
 		}
 		if( print_flag != 0){
-			if( stat(filename, &statbuf) == -1 ){
-				fprintf(stdout, "Il file %s è stato scritto con successo\n", filename);
+			if( stat(absolute_pathname, &statbuf) == -1 ){
+				fprintf(stdout, "Il file %s è stato scritto con successo\n", absolute_pathname);
 			}
 			else{
-				fprintf(stdout, "Il file %s [%ld bytes] [%.3f MB] è stato scritto con successo\n", filename, (size_t)statbuf.st_size, ((float)statbuf.st_size)/1000000);
+				fprintf(stdout, "Il file %s [%ld bytes] [%.3f MB] è stato scritto con successo\n", absolute_pathname, (size_t)statbuf.st_size, ((float)statbuf.st_size)/1000000);
 			}
 		}
-		free(filename);
+		free(absolute_pathname);
 	}
 	
 	closeConnection(socket_name);
 	return 0;
 }
 
-int readFileFromServer(char *socket_name, queue_t *files_list, char *dest_dirname, struct timespec *delay_time, int print_flag){
-	char *filename;
-	void *file_content;
-	size_t file_size;
+/*
+	La funzione legge i files (identificati dai loro percorsi assoluti in files_list) 
+	dal server (identificato da socket_name) e salva i files letti nella (eventuale)
+	directory dest_dirname. Se dest_dirname è NULL, i files letti sono buttati via.
+	Le richieste di lettura al server si intervallano di un tempo pari a delay_time. 
+	Se print_flag è diverso da 0, sono abilitate le stampe delle operazioni sullo 
+	standard output.
 	
-	// provo ad aprire la connessione verso il server
+	Nel caso in cui sia stato impossibile leggere un file (o si sia verificato un errore
+	con la sua scrittura su disco), la funzione non fallisce, ma prova a leggere gli altri 
+	file rimasti.
+	
+	La funzione restituisce -1 in caso di errore, 0 in caso di successo.
+*/
+int readFileFromServer(char *socket_name, queue_t *files_list, char *dest_dirname, struct timespec *delay_time, int print_flag){
+	char *pathname; // percorso del file da leggere
+
+	// apertura della connessione verso il server
 	if( openConnection(socket_name, 0, (const struct timespec) {0,0}) == -1){
 		perror("Impossibile connettersi al server");
 		return -1;
 	}
 	
-	// leggo i files da server
-	while( (filename = (char*) queueRemove(files_list)) != NULL){
+	// lettura dei files da server
+	while( (pathname = (char*) queueRemove(files_list)) != NULL){
+		void *file_content; // contenuto del file letto da server
+		size_t file_size; // grandezza (in bytes) del file letto da server
+		// ritardo tra due richieste consecutive
 		nanosleep(delay_time, NULL);
-		if( readFile(filename, &file_content, &file_size) == -1 ){
-			fprintf(stderr, "Errore durante la lettura del file %s: %s\n", filename, strerror(errno));
-			free(filename);
+		
+		if( readFile(pathname, &file_content, &file_size) == -1 ){
+			fprintf(stderr, "Errore durante la lettura del file %s: %s\n", pathname, strerror(errno));
+			free(pathname);
 			if( file_content != NULL ) free(file_content);
 			continue;
 		}
 		if( print_flag != 0 ){
-			fprintf(stdout, "Il file %s [%ld bytes] [%.3f MB] è stato scaricato con successo\n", filename, file_size, ((float)file_size)/1000000);
+			fprintf(stdout, "Il file %s [%ld bytes] [%.3f MB] è stato scaricato con successo\n", pathname, file_size, ((float)file_size)/1000000);
 		}
-		// scrivo (eventualmente) il file nella directory specificata
+		// Scriviamo (eventualmente) il file nella directory specificata
 		if( dest_dirname != NULL ){
-			FILE *file;
-			char *pathname;
-			char *new_path;
-			size_t new_size;
+			FILE *file; // file in cui scrivere il contenuto letto da server
+			char *filename; // nome del file
+			char *new_path; // nuovo percorso del file
 			
 			// estrapolo il nome del file scaricato 
-			pathname = absolutePathToFilename(filename);
-			if( pathname == NULL ){
-				fprintf(stderr, "Errore durante la scrittura su disco del file %s: %s\n", filename, strerror(errno));
-				free(filename);
+			filename = absolutePathToFilename(pathname);
+			if( filename == NULL ){
+				fprintf(stderr, "Errore durante la scrittura su disco del file %s: %s\n", pathname, strerror(errno));
+				free(pathname);
 				free(file_content);
 				continue;
 			}
 			
-			new_size = (strlen(dest_dirname) + strlen(pathname) + 2) * sizeof(char);
-			new_path = (char*) malloc(new_size);
-			
-			memset(new_path, '\0', new_size);
+			// ricaviamo il percorso relativo del file da scrivere
+			new_path = calloc(strlen(dest_dirname) + strlen(filename), sizeof(char));
+			if( new_path == NULL ){
+				fprintf(stderr, "Errore durante la scrittura su disco del file %s: %s\n", pathname, strerror(errno));
+				free(filename);
+				free(pathname);
+				free(file_content);
+				continue;
+			}
 			strcat(new_path, dest_dirname);
 			strcat(new_path, "/");
-			strcat(new_path, pathname);
-			file = fopen(new_path, "wb");
+			strcat(new_path, filename);
+			
 			// scrivo il file su disco
+			file = fopen(new_path, "wb");
 			if( file == NULL || fwrite(file_content, file_size, 1, file) == -1){
-				fprintf(stderr, "Errore durante la scrittura su disco del file %s: %s\n", filename, strerror(errno));
-				free(new_path);
-				free(file_content);
+				fprintf(stderr, "Errore durante la scrittura su disco del file %s: %s\n", pathname, strerror(errno));
 				free(filename);
+				free(pathname);
+				free(file_content);
+				free(new_path);
 				continue;
 			}
-			if( print_flag != 0 ) fprintf(stdout, "Il file %s è stato scritto in %s con successo\n", filename, dest_dirname);
+			if( print_flag != 0 ) fprintf(stdout, "Il file %s è stato scritto in %s con successo\n", pathname, dest_dirname);
+			free(filename);
 			free(new_path);
 			fclose(file);
 		}
 		free(file_content);
-		free(filename);
+		free(pathname);
 	}
 	
 	closeConnection(socket_name);
 	return 0;
 }
 
-/**/
+/* Handlers delle opzioni del client */
 
 void hOptionHandler(char *program_name){
 	char *options;
@@ -202,32 +262,43 @@ int fOptionHandler(client_params_t *params, char *optarg){
 	return 0;
 }
 
+/*
+	Implementazione dell'opzione -c del client, prova a rimuovere
+	da server (identificato da params->socket_name) i files
+	specificati nell'argomento optarg dell'opzione.
+	
+	Nel caso in cui sia stato impossibile cancellare un file, 
+	la funzione non fallisce, ma prova a cancellare gli altri 
+	file rimasti.
+	
+	Restituisce 0 in caso di successo, -1 altrimenti.
+*/
 int cOptionHandler(client_params_t *params, char *optarg){
 	queue_t *args_option;
-	char *filename;
+	char *pathname;
 	
-	// faccio il parsing degli argomenti dell'opzione
+	// parsing degli argomenti dell'opzione
 	args_option = parseOptionArg(optarg);
 	if( args_option == NULL ){
 		perror("Errore durante l'elaborazione dei parametri");
 		return -1;
 	}
 	
-	// provo ad aprire la connessione verso il server
+	// apertura della connessione verso il server
 	if( openConnection(params->socket_name, 0, (const struct timespec) {0,0}) == -1){
 		perror("Impossibile connettersi al server");
 		return -1;
 	}
 	
-	// rimuovo i files richiesti
-	while( (filename = (char*) queueRemove(args_option)) != NULL){
-		if( removeFile(filename) != 0 ){
-			fprintf(stderr, "Errore durante la rimozione del file %s: %s\n", filename, strerror(errno));
-			free(filename);
-			continue;
+	// rimozione dei files richiesti
+	while( (pathname = (char*) queueRemove(args_option)) != NULL){
+		if( removeFile(pathname) != 0 ){
+			fprintf(stderr, "Errore durante la rimozione del file %s: %s\n", pathname, strerror(errno));
 		}
-		if( params->p_flag != 0 ) fprintf(stdout, "File %s rimosso con successo\n", filename);
-		free(filename);
+		else{
+			if( params->p_flag != 0 ) fprintf(stdout, "File %s rimosso con successo\n", pathname);
+		}
+		free(pathname);
 	}
 	
 	closeConnection(params->socket_name);
@@ -235,7 +306,18 @@ int cOptionHandler(client_params_t *params, char *optarg){
 	return 0;
 }
 
-// params, parametri di -w, directory in cui scrivere i files espulsi
+/*
+	Implementazione dell'opzione -w del client, prova a scrivere
+	su server (identificato da params->socket_name) i files
+	nella cartella specificata nell'argomento optarg dell'opzione,
+	salvando in expelled_files_dirname i files eventualmente espulsi.
+	
+	Nel caso in cui sia stato impossibile scrivere un file, 
+	la funzione non fallisce, ma prova a scrivere gli altri 
+	file rimasti.
+	
+	Restituisce 0 in caso di successo, -1 altrimenti.
+*/
 int wOptionHandler(client_params_t *params, char *optarg, char *expelled_files_dirname){
 	queue_t *args_option; // argomenti di -w parsati
 	queue_t *to_send_files; // lista con i pathnames dei files da mandare
@@ -260,23 +342,24 @@ int wOptionHandler(client_params_t *params, char *optarg, char *expelled_files_d
 	}
 	
 	// faccio il parsing degli argomenti dell'opzione -w
-	fprintf(stderr, "Optarg: [%s]\n", optarg);
 	args_option = parseOptionArg(optarg);
 	if( args_option == NULL ){
 		perror("Errore durante l'elaborazione dei parametri");
 		return -1;
 	}
 	
+	// verifica di quali argomenti sono stati specificati
 	num_args = queueLen(args_option);
 	switch(num_args){
 		case 1: // numero files non specificato
 			source_directory = (char*) queueRemove(args_option);
 			num_files = -1;
 			break;
-		case 2: 
+		case 2: // numero files specificato
 			source_directory = (char*) queueRemove(args_option);
 			tmp = (char*) queueRemove(args_option);
 			if( isIntNumber(tmp, &num_files) != 0 ){
+				// numero files non è un numero valido
 				perror("Errore con il secondo parametro di -w");
 				return -1;
 			}
@@ -289,15 +372,15 @@ int wOptionHandler(client_params_t *params, char *optarg, char *expelled_files_d
 			break;
 	}
 	
-	// salvo in to_send_files i pathanames dei files
+	// salvataggio in to_send_files i pathanames dei files
 	// da mandare al server
 	if( getPathnamesFromDir(source_directory, &num_files, to_send_files) != 0 ){
 		perror("Errore durante la lettura dei files da mandare");
 		return -1;
 	}
 	
-	// mando i files al server
-	if( writeFilesToServer(params->socket_name, args_option, expelled_files_dirname, &params->delay_time, params->p_flag) == -1 ) return -1;
+	// scrittura dei files su server
+	if( writeFilesToServer(params->socket_name, to_send_files, expelled_files_dirname, &params->delay_time, params->p_flag) == -1 ) return -1;
 	
 	if( dir != NULL ) free(dir);
 	free(source_directory);
@@ -306,6 +389,18 @@ int wOptionHandler(client_params_t *params, char *optarg, char *expelled_files_d
 	return 0;
 }
 
+/*
+	Implementazione dell'opzione -W del client, prova a scrivere
+	su server (identificato da params->socket_name) i files
+	specificati nell'argomento optarg dell'opzione, salvando 
+	in expelled_files_dirname i files eventualmente espulsi.
+	
+	Nel caso in cui sia stato impossibile scrivere un file, 
+	la funzione non fallisce, ma prova a scrivere gli altri 
+	file rimasti.
+	
+	Restituisce 0 in caso di successo, -1 altrimenti.
+*/
 int WOptionHandler(client_params_t *params, char *optarg, char *expelled_files_dirname){
 	queue_t *args_option;
 	DIR *dir;
@@ -317,7 +412,7 @@ int WOptionHandler(client_params_t *params, char *optarg, char *expelled_files_d
 		return -1;
 	}
 	
-	// faccio il parsing degli argomenti dell'opzione
+	// parsing degli argomenti dell'opzione
 	args_option = parseOptionArg(optarg);
 	if( args_option == NULL ){
 		perror("Errore durante l'elaborazione dei parametri");
@@ -332,25 +427,38 @@ int WOptionHandler(client_params_t *params, char *optarg, char *expelled_files_d
 	return 0;
 }
 
+/*
+	Implementazione dell'opzione -r del client, prova a leggere
+	da server (identificato da params->socket_name) i files
+	specificati nell'argomento optarg dell'opzione, salvando 
+	in files_dirname i files ricevuti.
+	Se files_dirname è NULL, i file letti sono buttati via.
+	
+	Nel caso in cui sia stato impossibile leggere un file, 
+	la funzione non fallisce, ma prova a leggere gli altri 
+	file rimasti.
+	
+	Restituisce 0 in caso di successo, -1 altrimenti.
+*/
 int rOptionHandler(client_params_t *params, char *optarg, char *files_dirname){
 	queue_t *args_option;
 	DIR *dir;
 	
-	// verifica l'esistenza della eventuale directory
+	// verifica l'esistenza della eventuale directory 
 	dir = NULL;
 	if( files_dirname != NULL && (dir = opendir(files_dirname)) == NULL ){
 		perror("Errore con la cartella di destinazione");
 		return -1;
 	}
 	
-	// faccio il parsing degli argomenti dell'opzione
+	// parsing degli argomenti dell'opzione
 	args_option = parseOptionArg(optarg);
 	if( args_option == NULL ){
 		perror("Errore durante l'elaborazione dei parametri");
 		return -1;
 	}
 	
-	// leggo il contenuto dei files ed (se specificato) li scrivo
+	// lettura del contenuto dei files e (se specificato) scrittura 
 	// nella directory
 	if( readFileFromServer(params->socket_name, args_option, files_dirname, &params->delay_time, params->p_flag) == -1){
 		perror("Errore durante la lettura dei files");
@@ -361,11 +469,24 @@ int rOptionHandler(client_params_t *params, char *optarg, char *files_dirname){
 	return 0;
 }
 
+/*
+	Implementazione dell'opzione -R del client, prova a leggere
+	da server (identificato da params->socket_name) il numero
+	di files specificato nell'argomento optarg dell'opzione, 
+	salvando in files_dirname i files ricevuti.
+	Se files_dirname è NULL, i file letti sono buttati via.
+	
+	Nel caso in cui sia stato impossibile leggere un file, 
+	la funzione non fallisce, ma prova a leggere gli altri 
+	file rimasti.
+	
+	Restituisce 0 in caso di successo, -1 altrimenti.
+*/
 int ROptionHandler(client_params_t *params, char *optarg, char *files_dirname){
 	queue_t *args_option;
 	DIR *dir;
-	int num_files;
-	int read_files;
+	int num_files; // numero files da leggere
+	int read_files; // numero di files effettivamente ricevuti dal server
 	
 	// verifica l'esistenza della eventuale directory
 	dir = NULL;
@@ -379,7 +500,7 @@ int ROptionHandler(client_params_t *params, char *optarg, char *files_dirname){
 	}
 	else{
 		char *tmp;
-		// faccio il parsing degli argomenti dell'opzione
+		// parsing degli argomenti dell'opzione
 		args_option = parseOptionArg(optarg);
 		if( args_option == NULL ){
 			perror("Errore durante l'elaborazione dei parametri");
@@ -392,7 +513,7 @@ int ROptionHandler(client_params_t *params, char *optarg, char *files_dirname){
 			return -1;
 		}
 		
-		// controllo la validità del parametro numerico
+		// controllo della validità del parametro numerico
 		tmp = queueRemove(args_option);
 		if( isIntNumber(tmp, &num_files) != 0 ){
 			perror("Parametri non validi");
@@ -408,7 +529,7 @@ int ROptionHandler(client_params_t *params, char *optarg, char *files_dirname){
 		return -1;
 	}
 	
-	// leggo i files
+	// lettura dei files da server
 	if( (read_files = readNFiles(num_files, files_dirname)) == -1 ){
 		perror("Errore durante la lettura dei files");
 		return -1;
@@ -421,15 +542,21 @@ int ROptionHandler(client_params_t *params, char *optarg, char *files_dirname){
 	return 0;
 }
 
+/*
+	Implementazione dell'opzione -R del client, salva in 
+	params->delay_time il ritardo specificato in optarg.
+	
+	Restituisce 0 in caso di successo, -1 altrimenti
+*/
 int tOptionHandler(client_params_t *params, char *optarg){
 	long delay_milliseconds, nanoseconds;
 	time_t seconds;
-	// verifico la validità del tempo
+	// verifica della validità del tempo
 	if( isNumber(optarg, &delay_milliseconds) != 0 || delay_milliseconds < 0){
 		fprintf(stderr, "Opzione -p non valida\n");
 		return -1;
 	}
-	// trasformo i millisecondi in secondi e nanosecondi
+	// trasformazione dei millisecondi in secondi e nanosecondi
 	seconds = delay_milliseconds/1000;
 	nanoseconds =  (delay_milliseconds - seconds*1000)*1000000;
 	params->delay_time = (struct timespec) {seconds, nanoseconds};
