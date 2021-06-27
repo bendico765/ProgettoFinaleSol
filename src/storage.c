@@ -151,6 +151,11 @@ int storageGetSizeElements(storage_t *storage){
 	return storage->cache->cur_size;
 }
 
+queue_t* storageGetNElems(storage_t *storage, int N){
+	if( storage == NULL || storage->cache == NULL) return NULL;
+	return getNElemsFromCache(storage->cache, N);
+}
+
 /*
 	Stampa tutto il contenuto dello storage
 */

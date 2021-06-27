@@ -21,11 +21,5 @@ client_params_t* paramsCreate(){
 }
 
 void paramsDestroy(client_params_t *params){
-	if( params != NULL ){
-		if(params->w_args != NULL) free(params->w_args);
-		if(params->W_args != NULL) free(params->W_args);
-		if(params->r_args != NULL) free(params->r_args);
-		if(params->R_args != NULL) free(params->R_args);
-		free(params);
-	}
+	if( params != NULL ) free(params);
 }

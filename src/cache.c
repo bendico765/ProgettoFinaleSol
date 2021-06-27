@@ -150,6 +150,11 @@ int removeFromCache(cache_t *cache, file_t *file){
 	return -1;
 }
 
+queue_t* getNElemsFromCache(cache_t *cache, int N){
+	if( cache == NULL || cache->queue == NULL ) return NULL;
+	return queueGetNElems(cache->queue, N);
+}
+
 /*
 	Dealloca la cache e la coda FIFO utilizzata da essa.
 	Non dealloca i dati effettivi contenuti in cache.

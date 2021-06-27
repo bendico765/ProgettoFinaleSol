@@ -48,10 +48,12 @@ node_t* queueInsert(queue_t *queue, void *value){
 	Restituisce 0 in caso di successo, -1 altrimenti.
 */
 int queueDestroy(queue_t *queue, void (*free_value)(void*)){
+	node_t *tmp;
+	
 	if( queue == NULL ){
 		return -1;
 	}
-	node_t *tmp;
+	
 	while( (tmp = queue->head_node) != NULL ){
 		queue->head_node = queue->head_node->next_node;
 		if( *free_value ){ 
@@ -107,8 +109,11 @@ int queueIsEmpty(queue_t *queue){
 	è stato trovato all'interno della lista
 */
 void* queueRemoveFirstOccurrance(queue_t *queue, void* value, int(*value_compare)(void*, void*)){
+	node_t *tmp;
+	
 	if( *value_compare == NULL ) return NULL;
-	node_t *tmp = queue->tail_node;
+	
+	tmp = queue->tail_node;
 	while( tmp != NULL ){
 		if( value_compare(value, tmp->value) == 0 ){ // elemento trovato
 			void *removed_value = tmp->value;
@@ -138,16 +143,48 @@ void* queueRemoveFirstOccurrance(queue_t *queue, void* value, int(*value_compare
 	return NULL;
 }
 
+/*
+	Restituisce il numero di elementi nella coda
+*/
 int queueLen(queue_t *queue){
+	int counter = 0;
+	node_t *tmp;
+	
 	if( queue == NULL ){
 		return 0;
 	}
-	int counter = 0;
-	node_t *tmp = queue->head_node;
+	
+	tmp = queue->head_node;
 	while( tmp != NULL ){
 		counter += 1;
 		tmp = tmp->next_node;
 	}
 	return counter;
+}
+
+/*
+	Restituisce una coda contenente N elementi appartenenti
+	al parametro queue, o NULL in caso di errore.
+	
+	Gli elementi nella coda restituita non sono copie, ma 
+	sono gli elementi originali della coda specificata
+	come parametro.
+*/
+queue_t* queueGetNElems(queue_t *queue, int N){
+	queue_t *shallow_queue;
+	node_t *tmp;
+	int counter;
+	
+	if( queue == NULL || (shallow_queue = queueCreate()) == NULL ) return NULL;
+	
+	tmp = queue->head_node;
+	counter = 0;
+	while( tmp != NULL && counter < N){
+		if( queueInsert(shallow_queue, tmp->value) == NULL ) return NULL;
+		counter += 1;
+		tmp = tmp->next_node;
+	}
+	
+	return shallow_queue;
 }
 

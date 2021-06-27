@@ -13,8 +13,8 @@
 #include <dirent.h>
 #include <stdio.h>
 
-char saved_sockname[UNIX_PATH_MAX];
-int saved_fd = -1;
+static char saved_sockname[UNIX_PATH_MAX]; // nome del socket
+static int saved_fd = -1; // fd del socket
 
 /* File di utilità usate dalle implementazioni delle api */
 
@@ -23,8 +23,10 @@ int saved_fd = -1;
 	e restituisce un puntatore all'area di memoria 
 	contenente il contenuto del file, salvando in size
 	la dimensione (in bytes) del file.
+	
+	Restituisce NULL in caso di errore
 */
-char* getFileContent(const char* pathname, size_t *size){
+void* getFileContent(const char* pathname, size_t *size){
 	FILE *file;
 	struct stat statbuf;
 	size_t file_size;
@@ -38,25 +40,35 @@ char* getFileContent(const char* pathname, size_t *size){
 			return NULL;
 		}
 		// allocazione memoria per il contenuto
-		file_size = (size_t)statbuf.st_size;
+		file_size = (size_t) statbuf.st_size;
 		if( (content = malloc(file_size)) == NULL ){
 			fclose(file);
 			return NULL;
 		}
-		read_chars = fread(content, sizeof(char), file_size/sizeof(char), file);
+		read_chars = fread((void*)content, file_size, 1, file);
+		content[file_size/sizeof(char)-1] = '\0';
 		if( read_chars == -1 ){
 			free(content);
 			fclose(file);
 			return NULL;
-		} 
+		}
 		fclose(file);
 		*size = file_size;
-		return content;
+		return (void*)content;
 	}
 	return NULL;
 }
 
-int writeExpelledFilesToDir(int fd, const char* dirname, int num_files){
+/*
+	La funzione gestisce la ricezione di num_files files mandati 
+	dal server (identificato da fd) in seguito allo sforamento
+	dei limiti della cache, e li salva nella cartella dirname.
+	
+	Se dirname è NULL, i files sono buttati via.
+	
+	Restituisce 0 in caso di successo, -1 altrimenti.
+*/
+int writeReceivedFilesToDir(int fd, const char* dirname, int num_files){
 	message_t *recv_message;
 
 	// scrivo ogni file espulso nella eventuale directory
@@ -113,6 +125,9 @@ int writeExpelledFilesToDir(int fd, const char* dirname, int num_files){
 	errno viene settato opportunamente.
 */
 int openConnection(const char* sockname, int msec, const struct timespec abstime){
+	int socket_fd;
+	struct sockaddr_un sa;
+	
 	if( msec >= 1000 ){ // massimo valore in msec consentito
 		errno = EINVAL;
 		return -1;
@@ -120,10 +135,8 @@ int openConnection(const char* sockname, int msec, const struct timespec abstime
 	if( saved_fd != -1 ){ // esiste già una connessione aperta
 		errno = EADDRINUSE;
 		return -1;
-	}
+	}	
 	
-	int socket_fd;
-	struct sockaddr_un sa;
 	if( (socket_fd = socket(AF_UNIX, SOCK_STREAM, 0)) == -1 ) return -1;
 	strncpy(sa.sun_path, sockname, UNIX_PATH_MAX);
 	strncpy(saved_sockname, sockname, UNIX_PATH_MAX);
@@ -139,7 +152,7 @@ int openConnection(const char* sockname, int msec, const struct timespec abstime
 		// continuo ad attendere fino alla connessione o fino allo 
 		// scadere del tempo assoluto
 		while( real_time.tv_sec < abstime.tv_sec && ( conn_result = connect(socket_fd, (struct sockaddr*)&sa, sizeof(sa))) != 0){
-			fprintf(stderr, "Provo a connettermi\n");
+			fprintf(stderr, "Tentativo di connessione\n");
 			// attendo il tempo del ritardo
 			if( nanosleep(&first_delay, NULL) == -1 ) return -1;
 			// prendo l'ora corrente
@@ -268,12 +281,12 @@ int writeFile(const char* pathname, const char* dirname){
 	recv_message = receiveMessage(saved_fd);
 	if( recv_message == NULL ) return -1;
 	if( recv_message->hdr->option == SUCCESS ){ // permesso accordato
-		char *content;
+		void *content;
 		freeMessage(recv_message);
 		// apro il file
 		if( ( content = getFileContent(pathname, &size)) == NULL ) return -1;
 		// spedisco il file
-		if( sendMessage(saved_fd, WRITE_FILE_OPT, pathname, 0, size, content) == -1 ) return -1;
+		if( sendMessage(saved_fd, WRITE_FILE_OPT, pathname, 0, size, (char*) content) == -1 ) return -1;
 		// ricevo l'esito dell'operazione
 		recv_message = receiveMessage(saved_fd);
 		if( recv_message == NULL ) return -1;
@@ -284,7 +297,7 @@ int writeFile(const char* pathname, const char* dirname){
 				break;
 			case CACHE_SUBSTITUTION: // file espulsi dallo storage
 				errno = 0;
-				res = writeExpelledFilesToDir(saved_fd, dirname, recv_message->hdr->flags);
+				res = writeReceivedFilesToDir(saved_fd, dirname, recv_message->hdr->flags);
 				break;
 			case FILE_TOO_BIG: // file troppo grande per la cache
 				errno = EFBIG;
@@ -322,7 +335,7 @@ int readFile(const char* pathname, void** buf, size_t* size){
 	message_t *msg;
 	size_t temp_size;
 	int res;
-	char *copy;
+	void *copy;
 	
 	// mando il messaggio richiedendo il file
 	if( sendMessage(saved_fd, READ_FILE_OPT, pathname, 0, 0, NULL) == -1 ) return -1;
@@ -397,7 +410,7 @@ int appendToFile(const char* pathname, void* buf, size_t size, const char* dirna
 				break;
 			case CACHE_SUBSTITUTION: // file espulsi dallo storage
 				errno = 0;
-				res = writeExpelledFilesToDir(saved_fd, dirname, recv_message->hdr->flags);
+				res = writeReceivedFilesToDir(saved_fd, dirname, recv_message->hdr->flags);
 				break;
 			case FILE_TOO_BIG:
 				errno = EFBIG;
@@ -430,6 +443,7 @@ int readNFiles(int N, const char* dirname){
 	int num_files;
 	DIR *dir;
 	message_t *recv_message;
+	
 	// controllo l'esistenza dell'eventuale dirname
 	dir = NULL;
 	if( dirname != NULL && (dir = opendir(dirname)) == NULL ){
@@ -444,7 +458,7 @@ int readNFiles(int N, const char* dirname){
 
 	// scrivo il numero di files ricevuti nella directory
 	num_files = recv_message->hdr->flags;
-	if( writeExpelledFilesToDir(saved_fd, dirname, num_files) == -1 ) return -1;
+	if( writeReceivedFilesToDir(saved_fd, dirname, num_files) == -1 ) return -1;
 	
 	freeMessage(recv_message);
 	if(dir != NULL) free(dir);
@@ -462,6 +476,7 @@ int readNFiles(int N, const char* dirname){
 int closeFile(const char* pathname){
 	int res = 0;
 	message_t *recv_message;
+	
 	// controllo validità di pathname
 	if( pathname == NULL ){
 		errno = EINVAL;

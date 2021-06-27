@@ -3,6 +3,9 @@
 #include <string.h>
 
 /*
+	Funzione per mandare l'header di un messaggio al file
+	descriptor socket_fd;
+
 	Ritorna 0 in caso di successo della richiesta,
 	-1 altrimenti.
 */
@@ -12,7 +15,7 @@ int sendMessageHeader(int socket_fd, opt_keys option, const char *filename, int 
 		strncpy(buffer, filename, PATH_LEN_MAX);
 	}
 	else{
-		memset(buffer, '\0', PATH_LEN_MAX);
+		memset(buffer, '\0', PATH_LEN_MAX * sizeof(char));
 	}
 	if( writen(socket_fd, (void*)&option, sizeof(opt_keys)) == -1) return -1;
 	if( writen(socket_fd, (void*)buffer, sizeof(char)*PATH_LEN_MAX) == -1) return -1;
@@ -23,6 +26,7 @@ int sendMessageHeader(int socket_fd, opt_keys option, const char *filename, int 
 /*
 	Si mette in ascolto sul file descriptor specificato, aspettando
 	l'arrivo dell'header di un messaggio.
+	
 	Salva il contenuto dell'header in hdr, e restituisce -1 
 	in caso di errore, 0 in caso di EOF ed un numero positivo in 
 	caso di terminazione con successo.
@@ -39,6 +43,9 @@ int receiveMessageHeader(int socket_fd, message_header_t *hdr){
 }
 
 /*
+	Funzione per mandare il content di un messaggio al file
+	descriptor socket_fd;
+
 	Ritorna 0 in caso di successo della richiesta,
 	-1 altrimenti.
 */
@@ -52,6 +59,7 @@ int sendMessageContent(int socket_fd, size_t size, char* content){
 	Si mette in ascolto sul file descriptor specificato, aspettando
 	l'arrivo del content di un messaggio.
 	Il contenuto del messaggio è allocato dinamicamente.
+	
 	Salva il contenuto del content in cnt, e restituisce -1 
 	in caso di errore, 0 in caso di EOF e 1 in caso di successo.
 */
@@ -76,12 +84,10 @@ int receiveMessageContent(int socket_fd, message_content_t *cnt){
 	restituendo 0 in caso di successo o -1 in caso di errore 
 */
 int sendMessage(int socket_fd, opt_keys option, const char *filename, int flags, size_t size, char* content){
-	// mando i messaggi
 	if( sendMessageHeader(socket_fd, option, filename, flags) == -1 ) return -1;
 	if( sendMessageContent(socket_fd, size, content) == -1 ) return -1;
 	return 0;
 }
-
 /*
 	Restituisce il messaggio ricevuto da socket_fd, o 
 	restituisce NULL in caso di errore
@@ -94,13 +100,16 @@ message_t* receiveMessage(int socket_fd){
 	if( ( msg = malloc(sizeof(message_t)) ) == NULL ) return NULL;
 	if( ( hdr = malloc(sizeof(message_header_t)) ) == NULL ) return NULL;
 	if( ( cnt = malloc(sizeof(message_content_t)) ) == NULL ) return NULL;
-	
+
+	// ricezione header
 	if( receiveMessageHeader(socket_fd, hdr) <= 0 ){
 		free(hdr);
 		free(cnt);
 		free(msg);
 		return NULL;
 	}
+	
+	// ricezione contenuto
 	if( receiveMessageContent(socket_fd, cnt) <= 0 ){
 		free(hdr);
 		if( cnt->content != NULL ) free(cnt->content);

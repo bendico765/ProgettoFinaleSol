@@ -2,6 +2,7 @@
 #include <unistd.h>
 #include <string.h>
 #include <time.h>
+#include "api.h"
 #include "client_params.h"
 #include "client_handlers.h"
 
@@ -13,7 +14,7 @@ int main(int argc, char *argv[]){
 	optstring = ":hf:w:W:D:r:R:d:t:c:p";
 	termination_flag = 0;
 	ce_null( params = paramsCreate(), "Errore con l'inizializzazione dei parametri client" )
-	
+
 	while( termination_flag == 0 && (opt = getopt(argc, argv, optstring)) != -1 ){
 		switch(opt){
 			case 'h':
@@ -21,7 +22,9 @@ int main(int argc, char *argv[]){
 				termination_flag = 1;
 				break;
 			case 'f': // specifica del nome del socket AF_UNIX
-				if( fOptionHandler(params, optarg) != 0 ) termination_flag = 1;
+				if( fOptionHandler(params, optarg) != 0 ){
+					termination_flag = 1;
+				}
 				break;
 			case 'w':
 				if( optind < argc && strcmp("-D", argv[optind]) == 0 ){ // controllo se il prossimo parametro è -D
@@ -80,6 +83,10 @@ int main(int argc, char *argv[]){
 				}
 				break;
 			case 'R':
+				if( strcmp(optarg, "-d") == 0 ){ // non è stato specificato il parametro di -R
+					optind -= 1; // riporto indietro l'indice di getopt
+					optarg = "0";
+				}
 				if( optind < argc && strcmp("-d", argv[optind]) == 0 ){ // controllo se il prossimo parametro è -d
 					// salvo la richiesta per il parametro -d
 					params->R_args = strdup(optarg);
@@ -100,12 +107,14 @@ int main(int argc, char *argv[]){
 				else{
 					// eseguo le richieste pendenti specificando la directory
 					if( params->r_args != NULL ){
-						rOptionHandler(params, params->r_args, optarg);
+						if( rOptionHandler(params, params->r_args, optarg) == -1 ) termination_flag = 1;
 						free(params->r_args);
+						params->r_args = NULL;
 					}
 					if( params->R_args != NULL ){
-						ROptionHandler(params, params->R_args, optarg);
+						if( ROptionHandler(params, params->R_args, optarg) == -1 ) termination_flag = 1;
 						free(params->R_args);
+						params->R_args = NULL;
 					}
 				}
 				break;
@@ -123,9 +132,9 @@ int main(int argc, char *argv[]){
 				termination_flag = 1;
 				break;
 			case ':': // argomento mancante
-				if( opt == 'R' ){
+				if( optopt == 'R' ){ // R ha un parametro opzionale
 					if( optind < argc && strcmp("-d", argv[optind]) == 0 ){ // controllo se il prossimo parametro è -d
-						// salvo la richiesta per il parametro -d
+						// salvo la richiesta per il parametro 0
 						params->R_args = strdup("0");
 						if( params->R_args == NULL ){
 							perror("Errore durante l'esecuzione del client");
@@ -143,6 +152,7 @@ int main(int argc, char *argv[]){
 				break;
 		}
 	}
+	if( params->socket_name[0] == '\0' ) closeConnection(params->socket_name);
 	paramsDestroy(params);
 	return 0;
 }

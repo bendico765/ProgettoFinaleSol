@@ -287,49 +287,49 @@ int readFileHandler(int fd, message_t *msg, FILE *logfile, storage_t *storage){
 
 int readNFileHandler(int fd, message_t *msg, FILE *logfile, storage_t *storage){
 	fprintf(logfile, "THREAD [%ld]: readNFile(%d)\n", pthread_self(), msg->hdr->flags);
+	
+	file_t *file;
+	queue_t *shallow_copy_queue;
 	int res = 0;
 	int num_requested_files = msg->hdr->flags;
-	int num_files_available = storageGetNumElements(storage);
+	int num_files_available;
 	
 	ce_less1( lock(&storage_lock), "Errore lock storage readFile" );
+	num_files_available = storageGetNumElements(storage);
 	
-	if( num_requested_files <= 0 || num_requested_files > num_files_available ){ // leggo e mando tutti i files dello storage
-		file_t *file;
-		node_t *tmp = storage->cache->queue->head_node;
+	if( num_requested_files <= 0 || num_requested_files > num_files_available ){ // leggo e mando tutti i files disponibili nello storage
+		shallow_copy_queue = storageGetNElems(storage, num_files_available);
 		// mando il numero di files disponibili
 		res = sendMessage(fd, READ_N_FILE_OPT, NULL, num_files_available, 0, NULL);
 		if( res == 0 ){ // se non ci sono stati errori, mando i files
-			// mando i files
-			while( tmp != NULL && res == 0){
-				file = (file_t*)tmp->value;
+			while( (file = queueRemove(shallow_copy_queue)) != NULL){
 				res = sendMessage(fd, READ_N_FILE_OPT, file->pathname, 0, file->size, file->content);
 				if( res != 0 ) break;
-				tmp = tmp->next_node;
 			}
 		}
 	}
 	else{ // mando il numero di files richiesti
-		file_t *file;
-		node_t *tmp = storage->cache->queue->head_node;
+		shallow_copy_queue = storageGetNElems(storage, num_requested_files);
 		// mando il numero di files disponibili
 		res = sendMessage(fd, READ_N_FILE_OPT, NULL, num_requested_files, 0, NULL);
 		if( res == 0 ){
 			// mando i files
-			for(int i = 0; i < num_requested_files && res == 0; i++){
-				file = (file_t*)tmp->value;
+			while( (file = queueRemove(shallow_copy_queue)) != NULL){
 				res = sendMessage(fd, READ_N_FILE_OPT, file->pathname, 0, file->size, file->content);
 				if( res != 0 ) break;
-				tmp = tmp->next_node;
 			}
 		}
 	}
 	
 	ce_less1( unlock(&storage_lock), "Errore unlock storage readFile" );
+	
+	queueDestroy(shallow_copy_queue, NULL);
 	return res;
 }
 
 int appendToFileHandler(int fd, message_t *msg, FILE *logfile, storage_t *storage, stats_t *server_stats){
 	fprintf(logfile, "THREAD [%ld]: appendToFile(%s)\n", pthread_self(), msg->hdr->filename);
+	
 	int res = 0;
 	file_t *file;
 	
@@ -341,12 +341,12 @@ int appendToFileHandler(int fd, message_t *msg, FILE *logfile, storage_t *storag
 		res = sendMessage(fd, INEXISTENT_FILE, NULL, 0, 0, NULL);
 	}
 	else{
-		int err;
-		int num_expelled_files;
-		queue_t *expelled_files;
-		message_t *append_msg;
-		char *new_content;
-		size_t new_size;
+		int err; // eventuale codice di errore della cache
+		int num_expelled_files; // numero files espulsi dalla cache
+		queue_t *expelled_files; // coda files espulsi dalla cache
+		message_t *append_msg; // messaggio contenete le modifiche da appendere
+		void *new_content; // nuovo contenuto del file
+		size_t new_size; // nuova dimensone del file
 		
 		// segnalo al client di mandare la modifica
 		res = sendMessage(fd, SUCCESS, NULL, 0, 0, NULL);
@@ -364,12 +364,14 @@ int appendToFileHandler(int fd, message_t *msg, FILE *logfile, storage_t *storag
 		
 		// segno che il file è stato modificato
 		file->freshly_opened = 0;
-		
 		// faccio l'operazione di append
-		new_size = file->size + append_msg->cnt->size;
-		ce_null(new_content = calloc(new_size, sizeof(char)), "Errore malloc");
-		strcat(new_content, file->content);
-		strcat(new_content, append_msg->cnt->content);
+		new_size = file->size + append_msg->cnt->size - sizeof(char);
+		ce_null(new_content = malloc(new_size), "Errore malloc");
+		memset(new_content, '\0', new_size);
+		if( file->content != NULL ){
+			strncat((char*) new_content, file->content, file->size);
+		}
+		if( append_msg->cnt->content != NULL ) strncat((char*) new_content, append_msg->cnt->content, append_msg->cnt->size - 1);
 		
 		// espello eventuali file dalla cache
 		expelled_files = storageEditFile(storage, (void*)msg->hdr->filename, new_content, new_size, &err);
@@ -427,8 +429,9 @@ int appendToFileHandler(int fd, message_t *msg, FILE *logfile, storage_t *storag
 	return res;
 }
 
-
-
+/*
+	Funzione eseguita da un thread worker
+*/
 void* workerThread(void* arg){
 	storage_t *storage = ((thread_arg_t*)arg)->storage;
 	queue_t *fd_queue = ((thread_arg_t*)arg)->fd_queue;
@@ -440,7 +443,7 @@ void* workerThread(void* arg){
 	while( termination_flag == 0){
 		int fd;
 		void *tmp;
-		// Sezione critica: prelevo il fd dalla coda
+		// Sezione critica: prelevo il fd da servire dalla coda
 		ce_less1( lock(&fd_queue_lock), "Fallimento della lock in un thread worker");
 		while( (tmp = queueRemove(fd_queue)) == NULL ){ // coda vuota: aspetto
 			ce_less1( cond_wait(&fd_queue_cond, &fd_queue_lock), "Fallimento della wait in un thread worker");
@@ -504,7 +507,12 @@ void* workerThread(void* arg){
 	return 0;
 }
 
+/*
+	Funzione che termina e dealloca number_workers threads worker, mandando 
+	il segnale di terminazione nella coda fd_queue
+*/
 void terminateWorkers(queue_t *fd_queue, pthread_t workers[], int number_workers){
+	// invio del segnale di terminazione
 	for(int i = 0; i < number_workers; i++){
 		int *value = malloc(sizeof(int));
 		ce_null(value, "Errore malloc terminateWorkers");
@@ -514,6 +522,7 @@ void terminateWorkers(queue_t *fd_queue, pthread_t workers[], int number_workers
 		ce_less1( cond_signal(&fd_queue_cond), "Errore nella signal della terminazione dei workers");
 		ce_less1( unlock(&fd_queue_lock), "Errore nella unlock della terminazione dei workers");
 	}
+	// join dei thread
 	for(int i = 0; i < number_workers; i++){
 		errno = pthread_join(workers[i], NULL);
 		if( errno != 0 ){
@@ -525,6 +534,13 @@ void terminateWorkers(queue_t *fd_queue, pthread_t workers[], int number_workers
 	free(workers);
 }
 
+/*
+	Funzione che inizializza number_workers threads, passando arg_struct
+	come argomento. 
+	
+	Restituise il puntatore al vettore di thread inizializzati, NULL
+	in caso di errore
+*/
 pthread_t* initializeWorkers(int number_workers, thread_arg_t *arg_struct){
 	pthread_t *workers = malloc(sizeof(pthread_t) * number_workers);
 	if( workers != NULL ){
@@ -567,7 +583,7 @@ int initializeServerAndStart(char *sockname, int max_connections){
 
 int main(int argc, char *argv[]){
 	storage_t *storage; // storage dei files
-	config_t server_config;
+	config_t server_config; // configurazione del server
 	int signal_handler_pipe[2]; // pipe main/signal handler
 	int fd_pipe[2]; // pipe dispatcher/workers
 	queue_t *fd_queue; // coda dispatcher/workers
@@ -575,7 +591,7 @@ int main(int argc, char *argv[]){
 	FILE *logfile; // file in cui stampare i messaggi di log 
 	stats_t *server_stats; // struct contenente le statistiche
 	int socket_fd; // fd del socket del server
-	int connected_clients_counter = 0;
+	int connected_clients_counter = 0; // contatore dei clients connessi
 	int fd_num = 0; // max fd attimo
 	fd_set set; // insieme fd attivi
 	fd_set rdset; // insieme fd attesi in lettura
@@ -691,8 +707,7 @@ int main(int argc, char *argv[]){
 
 						ce_less1(fd_connect = accept(socket_fd, NULL, 0), "Errore nella accept");
 						
-						fprintf(logfile, "Ho accettato una connessione\n");
-						// aggiungo il fd alla tabella dei fd
+						fprintf(logfile, "Connessione accettata\n");
 						// incremento il contatore dei clients connessi
 						connected_clients_counter += 1;
 						// aggiorno il set dei fd
@@ -721,7 +736,7 @@ int main(int argc, char *argv[]){
 				}
 			}
 		// reinserisco gli eventuali fd serviti dai workers
-		if( FD_ISSET(fd_pipe[0], &rdset ) ){
+		if( FD_ISSET(fd_pipe[0], &rdset) ){
 			int new_fd;
 			int read_chars;
 			read_chars = readn(fd_pipe[0], (void*)&new_fd, sizeof(int));
@@ -734,7 +749,7 @@ int main(int argc, char *argv[]){
 					// decremento il contatore dei clients connessi
 					connected_clients_counter -= 1;
 				}
-				else{
+				else{ // reinserisco il fd tra quelli da ascoltare
 					FD_SET(new_fd, &set);
 					if( new_fd > fd_num ){
 						fd_num = new_fd;
