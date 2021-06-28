@@ -6,10 +6,10 @@
 
 typedef struct{
 	queue_t *queue; // coda dei file nello storage
-	size_t max_size; // massima dimensione in bytes dello storage
-	size_t cur_size; // dimensione attuale dello storage
-	size_t max_num_file; // massimo numero di file archiviabili nello storage
-	size_t cur_num_file; // numero attuale di file nello storage
+	size_t max_size; // massima dimensione in bytes della cache
+	size_t cur_size; // dimensione attuale della cache
+	size_t max_num_file; // massimo numero di file archiviabili
+	size_t cur_num_file; // numero attuale di file
 }cache_t;
 
 cache_t* createCache(size_t max_size, size_t max_num_file);

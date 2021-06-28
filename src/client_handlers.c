@@ -191,9 +191,9 @@ int readFileFromServer(queue_t *files_list, char *dest_dirname, struct timespec 
 				free(file_content);
 				continue;
 			}
-			
+					
 			// ricaviamo il percorso relativo del file da scrivere
-			new_path = calloc(strlen(dest_dirname) + strlen(filename), sizeof(char));
+			new_path = calloc(strlen(dest_dirname) + strlen(filename) + 2, sizeof(char));
 			if( new_path == NULL ){
 				fprintf(stderr, "Errore durante la scrittura su disco del file %s: %s\n", pathname, strerror(errno));
 				free(filename);
@@ -207,7 +207,7 @@ int readFileFromServer(queue_t *files_list, char *dest_dirname, struct timespec 
 			
 			// scrivo il file su disco
 			file = fopen(new_path, "wb");
-			if( file == NULL || fwrite(file_content, file_size, 1, file) == -1){
+			if( file == NULL){
 				fprintf(stderr, "Errore durante la scrittura su disco del file %s: %s\n", pathname, strerror(errno));
 				free(filename);
 				free(pathname);
@@ -215,6 +215,7 @@ int readFileFromServer(queue_t *files_list, char *dest_dirname, struct timespec 
 				free(new_path);
 				continue;
 			}
+			fwrite(file_content, strlen(file_content)*sizeof(char), 1, file);
 			if( print_flag != 0 ) fprintf(stdout, "Il file %s è stato scritto in %s con successo\n", pathname, dest_dirname);
 			free(filename);
 			free(new_path);

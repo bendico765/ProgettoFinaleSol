@@ -347,7 +347,7 @@ int readFile(const char* pathname, void** buf, size_t* size){
 		case SUCCESS:
 			// salvo il contenuto del file
 			temp_size = msg->cnt->size;
-			if( ( copy = malloc(temp_size) ) == NULL ) return -1;
+			if( ( copy = calloc(1, temp_size) ) == NULL ) return -1;
 			memcpy(copy, msg->cnt->content, temp_size);
 			*buf = copy;
 			*size =	temp_size;	

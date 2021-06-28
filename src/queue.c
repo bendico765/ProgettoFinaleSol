@@ -2,7 +2,7 @@
 #include <stdlib.h>
 
 /*
-	Crea ed inizializza una lista vuota, restituendo
+	Crea ed inizializza una coda vuota, restituendo
 	NULL in caso di errore
 */
 queue_t* queueCreate(){
@@ -16,7 +16,7 @@ queue_t* queueCreate(){
 }
 
 /*
-	Inserisce l'elemento value in testa alla lista.
+	Inserisce l'elemento value in testa alla coda.
 	Restituisce NULL in caso di errore.
 */
 node_t* queueInsert(queue_t *queue, void *value){
@@ -28,7 +28,7 @@ node_t* queueInsert(queue_t *queue, void *value){
 	new_node->next_node = NULL;
 	new_node->prec_node = NULL;
 	
-	// inserisce il nuovo nodo in testa alla lista
+	// inserisce il nuovo nodo in testa alla coda
 	if( queue->head_node == NULL ){
 		queue->head_node = new_node;
 		queue->tail_node = new_node;
@@ -90,7 +90,7 @@ void* queueRemove(queue_t *queue){
 }
 
 /*
-	Restituisce 0 se la lista è vuota, -1 altrimenti
+	Restituisce 0 se la coda è vuota, -1 altrimenti
 */
 int queueIsEmpty(queue_t *queue){
 	if( queue->head_node == NULL ){
@@ -102,11 +102,11 @@ int queueIsEmpty(queue_t *queue){
 }
 
 /*
-	Rimuove dalla lista la prima occorrenza del valore value,
-	partendo dalla coda ed usando la funzione 
+	Rimuove dalla coda la prima occorrenza del valore value,
+	partendo dalla fine della coda ed usando la funzione 
 	value_compare per confrontare i valori.
 	Restituisce l'elemento rimosso, NULL se non
-	è stato trovato all'interno della lista
+	è stato trovato all'interno della coda
 */
 void* queueRemoveFirstOccurrance(queue_t *queue, void* value, int(*value_compare)(void*, void*)){
 	node_t *tmp;
@@ -119,6 +119,8 @@ void* queueRemoveFirstOccurrance(queue_t *queue, void* value, int(*value_compare
 			void *removed_value = tmp->value;
 			node_t *right_node = tmp->next_node;
 			node_t *left_node = tmp->prec_node;
+			// sistemo i puntatori dei nodi a destra ed a sinistra 
+			// del nodo con l'elemento trovato
 			if( right_node != NULL ){
 				right_node->prec_node = tmp->prec_node;
 			}
