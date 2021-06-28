@@ -7,8 +7,8 @@
 #include "queue.h"
 
 typedef struct{
-	icl_hash_t *file_hash;
-	cache_t *cache;
+	icl_hash_t *file_hash; // struttura per salvare i files
+	cache_t *cache; // struttura per la gestione della politica di caching
 }storage_t;
 
 storage_t* storageCreate(int nbuckets, unsigned int (*hash_function)(void*), int (*hash_key_compare)(void*, void*), size_t max_size, size_t max_num_file);

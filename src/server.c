@@ -248,6 +248,7 @@ int writeFileHandler(int fd, message_t *msg, FILE *logfile, storage_t *storage, 
 			}
 			else{
 				if( err == -2 ){ // la modifica è troppo grande per la cache
+					fprintf(logfile, "THREAD [%ld]: File %s (%ld bytes) troppo grande per lo storage\n", pthread_self(), msg->hdr->filename, file_msg->cnt->size);
 					res = sendMessage(fd, FILE_TOO_BIG, NULL, 0, 0, NULL);
 				}
 				else{ // errori gravi durante le operazioni in cache

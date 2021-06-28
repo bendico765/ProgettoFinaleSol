@@ -9,15 +9,20 @@
 	Inizializza a zero i contatori e la coda di files,
 	e restituisce la cache allocata, NULL in caso di errore.
 */
-cache_t* createCache(size_t max_size, size_t max_num_file){
-	if( max_size <= 0 || max_num_file <= 0 ){ return NULL;}
-	cache_t *new_cache = malloc(sizeof(cache_t));
+cache_t* cacheCreate(size_t max_size, size_t max_num_file){
+	cache_t *new_cache;
+	
+	if( max_size <= 0 || max_num_file <= 0 ) return NULL;
+	
+	new_cache = malloc(sizeof(cache_t));
 	if( new_cache == NULL ){ return NULL; }
+	
 	new_cache->queue = queueCreate();
 	if( new_cache->queue == NULL ){ 
 		free(new_cache); 
 		return NULL; 
 	}
+	
 	new_cache->max_size = max_size;
 	new_cache->cur_size = 0;
 	new_cache->max_num_file = max_num_file;
@@ -27,8 +32,9 @@ cache_t* createCache(size_t max_size, size_t max_num_file){
 
 /*
 	Prova ad inserire il file nella cache e 
-	restitusce la lista di file eventualmente 
-	espulsi dopo l'inserimento.
+	restitusce una coda contenente i file eventualmente 
+	espulsi dopo l'inserimento. 
+	
 	La variabile err viene settata per dare maggior informazioni
 	su eventuali errori, e può assumere i seguenti valori:
 	 0: inserimento effettuato con successo
@@ -36,7 +42,9 @@ cache_t* createCache(size_t max_size, size_t max_num_file){
 	-2: il file non entra nella cache
 	-3: errore nella malloc del nuovo nodo della cache
 */
-queue_t* insertFileIntoCache(cache_t *cache, file_t *file, int *err){
+queue_t* cacheInsert(cache_t *cache, file_t *file, int *err){
+	queue_t *expelled_files; // lista file espulsi
+	
 	if( cache == NULL || file == NULL ){
 		*err = -1; 
 		return NULL;
@@ -48,12 +56,14 @@ queue_t* insertFileIntoCache(cache_t *cache, file_t *file, int *err){
 		*err = -2;
 		return NULL;
 	}
-	queue_t *expelled_files = queueCreate(); // lista file espulsi
+	
+	expelled_files = queueCreate(); 
 	if( expelled_files == NULL ){ 
 		*err = -3;
 		return NULL;
 	}
-	// sforamento limite numero files
+	
+	// controllo l'eventuale sforamento del limite numero files
 	if( cache->cur_num_file == cache->max_num_file ){
 		// rimuovo un file dalla cache
 		void *expelled_file = queueRemove(cache->queue); 
@@ -93,23 +103,27 @@ int areFilesDifferent(void *a, void *b){
 }
 
 /*
-		Sia file un elemento all'interno della cache e file_new_size la 
-		nuova dimensione che avrà dopo una modifica, la funzione
-		restituisce la lista di files espulsi per far spazio alla 
-		modifica del file.
-		L'espulsione è fatta preservando l'ordine fifo.
-		La variabile err viene settata per dare maggior informazioni
-		su eventuali errori, e può assumere i seguenti valori:
-		 0: operazione effettuata con successo
-		-1: parametri invalidi
-		-2: il file modificato non entrerebbe nella cache
-		-3: errore nella malloc del nuovo nodo della cache
+	Sia file un elemento all'interno della cache e file_new_size la 
+	nuova dimensione che avrà dopo una modifica, la funzione
+	restituisce la lista di files espulsi per far spazio alla 
+	modifica del file.
+	L'espulsione è fatta preservando l'ordine fifo.
+	La variabile err viene settata per dare maggior informazioni
+	su eventuali errori, e può assumere i seguenti valori:
+	 0: operazione effettuata con successo
+	-1: parametri invalidi
+	-2: il file modificato non entrerebbe nella cache
+	-3: errore nella malloc del nuovo nodo della cache
 */
-queue_t* editFileInCache(cache_t *cache, file_t *file, size_t file_new_size, int *err){
+queue_t* cacheEditFile(cache_t *cache, file_t *file, size_t file_new_size, int *err){
+	queue_t *expelled_files; // lista file espulsi
+	file_t *expelled_file;
+
 	if( cache == NULL || file == NULL ){
 		*err = -1; 
 		return NULL;
 	}
+	
 	// se il file modificato è più grande della dimensione totale
 	// della cache non ha senso fare ulteriori controlli
 	// e termino
@@ -117,12 +131,14 @@ queue_t* editFileInCache(cache_t *cache, file_t *file, size_t file_new_size, int
 		*err = -2;
 		return NULL;
 	}
-	queue_t *expelled_files = queueCreate(); // lista file espulsi
-	file_t *expelled_file;
+	
+	expelled_files = queueCreate(); 
 	if( expelled_files == NULL ){ 
 		*err = -3;
 		return NULL;
 	}
+	
+	// continuo a rimuovere files finchè la modifica del file comporterebbe overflow
 	while( (cache->cur_size - file->size + file_new_size ) > cache->max_size && (expelled_file = (file_t*) queueRemoveFirstOccurrance(cache->queue, (void*)file, areFilesDifferent)) != NULL ){
 		// aggiorno le stats della cache
 		cache->cur_size -= ((file_t*)expelled_file)->size;
@@ -134,13 +150,17 @@ queue_t* editFileInCache(cache_t *cache, file_t *file, size_t file_new_size, int
 }
 
 /*
-
+	Rimuove il file dalla cache (aggiornando le statistiche interne).
+	Restituisce 0 se l'elemento è stato rimosso, -1 se non è stato 
+	trovato. 
 */
-int removeFromCache(cache_t *cache, file_t *file){
+int cacheRemove(cache_t *cache, file_t *file){
+	file_t *removed_file;
 	if( cache == NULL || file == NULL ){
 		return -1;
 	}
-	file_t *removed_file = queueRemoveFirstOccurrance(cache->queue, (void*)file, fileEqual);
+	
+	removed_file = queueRemoveFirstOccurrance(cache->queue, (void*)file, fileEqual);
 	if( removed_file != NULL ){
 		cache->cur_size -= removed_file->size;
 		cache->cur_num_file -= 1;
@@ -149,7 +169,11 @@ int removeFromCache(cache_t *cache, file_t *file){
 	return -1;
 }
 
-queue_t* getNElemsFromCache(cache_t *cache, int N){
+/*
+	Restituisce una coda contenente N elementi dalla cache,
+	NULL in caso di errore
+*/
+queue_t* cacheGetNElemsFromCache(cache_t *cache, int N){
 	if( cache == NULL || cache->queue == NULL ) return NULL;
 	return queueGetNElems(cache->queue, N);
 }
@@ -158,11 +182,8 @@ queue_t* getNElemsFromCache(cache_t *cache, int N){
 	Dealloca la cache e la coda FIFO utilizzata da essa.
 	Non dealloca i dati effettivi contenuti in cache.
 */
-void destroyCache(cache_t *cache){
-	if( cache == NULL ){
-		return;
-	}
-	else{
+void cacheDestroy(cache_t *cache){
+	if( cache != NULL ){
 		queueDestroy(cache->queue, NULL);
 		free(cache);
 	}

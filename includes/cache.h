@@ -12,11 +12,11 @@ typedef struct{
 	size_t cur_num_file; // numero attuale di file
 }cache_t;
 
-cache_t* createCache(size_t max_size, size_t max_num_file);
-queue_t* insertFileIntoCache(cache_t *cache, file_t *file, int *err);
-queue_t* editFileInCache(cache_t *cache, file_t *file, size_t file_new_size, int *err);
-int removeFromCache(cache_t *cache, file_t *file);
-queue_t* getNElemsFromCache(cache_t *cache, int N);
-void destroyCache(cache_t *cache);
+cache_t* cacheCreate(size_t max_size, size_t max_num_file);
+queue_t* cacheInsert(cache_t *cache, file_t *file, int *err);
+queue_t* cacheEditFile(cache_t *cache, file_t *file, size_t file_new_size, int *err);
+int cacheRemove(cache_t *cache, file_t *file);
+queue_t* cacheGetNElemsFromCache(cache_t *cache, int N);
+void cacheDestroy(cache_t *cache);
 
 #endif /* _CACHE_H */
