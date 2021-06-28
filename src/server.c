@@ -553,16 +553,16 @@ pthread_t* initializeWorkers(int number_workers, thread_arg_t *arg_struct){
 	return workers;
 }
 
-void printStats(stats_t *server_stats, storage_t *storage){
-	printf("---------\n");
-	printf("NUMERO FILES MEMORIZZATI: %d\n", server_stats->num_files);
-	printf("DIMENSIONE FILE STORAGE (bytes): %d\n", server_stats->dim_storage);
-	printf("MASSIMO NUMERO DI FILES MEMORIZZATI DURANTE L'ESECUZIONE: %d\n", server_stats->max_num_files);
-	printf("MASSIMA DIMENSIONE DELLO STORAGE RAGGIUNTA DURANTE L'ESECUZIONE (bytes): %d\n", server_stats->max_dim_storage);
-	printf("NUMERO DI VOLTE IN CUI L'ALGORITMO DI CACHING È ENTRATO IN FUNZIONE: %d\n", server_stats->cache_substitutions);
-	printf("FILES MEMORIZZATI A FINE ESECUZIONE:\n");
-	storagePrint(storage);
-	printf("---------\n");
+void printStats(FILE *stream, stats_t *server_stats, storage_t *storage){
+	fprintf(stream, "---------\n");
+	fprintf(stream, "NUMERO FILES MEMORIZZATI: %d\n", server_stats->num_files);
+	fprintf(stream, "DIMENSIONE FILE STORAGE (bytes): %d\n", server_stats->dim_storage);
+	fprintf(stream, "MASSIMO NUMERO DI FILES MEMORIZZATI DURANTE L'ESECUZIONE: %d\n", server_stats->max_num_files);
+	fprintf(stream, "MASSIMA DIMENSIONE DELLO STORAGE RAGGIUNTA DURANTE L'ESECUZIONE (bytes): %d\n", server_stats->max_dim_storage);
+	fprintf(stream, "NUMERO DI VOLTE IN CUI L'ALGORITMO DI CACHING È ENTRATO IN FUNZIONE: %d\n", server_stats->cache_substitutions);
+	fprintf(stream, "FILES MEMORIZZATI A FINE ESECUZIONE:\n");
+	storagePrint(storage, filePrintInfo, stream);
+	fprintf(stream, "---------\n");
 }
 
 /*
@@ -760,7 +760,7 @@ int main(int argc, char *argv[]){
 		}
 	}
 	// stampa stastiche 
-	printStats(server_stats, storage);
+	printStats(logfile, server_stats, storage);
 	// chiusura dei fd e deallocazione delle varie strutture
 	close(socket_fd);
 	unlink(server_config.socket_name);

@@ -118,34 +118,40 @@ int storageRemove(storage_t *storage, void *key, void (*free_key)(void*), void (
 */
 queue_t* storageEditFile(storage_t *storage, void *key, char *new_content, size_t file_new_size, int *err){
 	file_t *file;
+	queue_t *expelled_files;
+	queue_t *tmp_queue;
+	file_t *expelled_file;
+	
+	// ricerca del file nello storage
 	if( storage == NULL || (file = (file_t*) storageFind(storage, key)) == NULL){
 		*err = -1;
 		return NULL;
 	}
-	queue_t *expelled_files;
-	node_t *tmp;
-	expelled_files = cacheEditFile(storage->cache, file, file_new_size, err);
-	if( *err != 0 ) return NULL;
-	// rimuovo i files espulsi dallo storage
-	tmp = expelled_files->head_node;
-	while( tmp != NULL ){
-		file_t *expelled_file = (file_t*)tmp->value;
-		icl_hash_delete(storage->file_hash, (void*)expelled_file->pathname, NULL, NULL);
-		tmp = tmp->next_node;
-	}
-	// aggiorno la dimensione della cache
-	storage->cache->cur_size += (file_new_size - file->size);
-	// dealloco le informazioni precedenti
-	if(file->content != NULL) free(file->content);
-	// aggiorno il file con il nuovo contenuto
-	file->content = malloc(file_new_size);
-	if( file->content == NULL ){
+	
+	expelled_files = queueCreate();
+	if( expelled_files == NULL ){
 		*err = -3;
 		return NULL;
 	}
-	memcpy(file->content, new_content, file_new_size);
-	file->size = file_new_size;
 	
+	tmp_queue = cacheEditFile(storage->cache, file, file_new_size, err);
+	if( *err != 0 ) return NULL;
+	
+	// rimuovo i files espulsi dallo storage
+	while( (expelled_file = queueRemove(tmp_queue)) != NULL ){
+		icl_hash_delete(storage->file_hash, (void*)expelled_file->pathname, NULL, NULL);
+		queueInsert(expelled_files, expelled_file);
+	}
+	// aggiorno la dimensione della cache
+	storage->cache->cur_size += (file_new_size - file->size);
+	
+	// aggiorno il file con il nuovo contenuto
+	if( fileEdit(file, (void*)new_content, file_new_size) == -1 ){
+		*err = -3;
+		return NULL;
+	}
+
+	queueDestroy(tmp_queue, NULL);
 	return expelled_files;
 }
 
@@ -195,12 +201,14 @@ queue_t* storageGetNElems(storage_t *storage, int N){
 /*
 	Stampa tutto il contenuto dello storage
 */
-void storagePrint(storage_t *storage){
-	int k;
-    icl_entry_t *entry;
-    char *key;
-    file_t *value;
-    icl_hash_t *hash_table = storage->file_hash;
-    icl_hash_foreach(hash_table, k, entry, key, value)
-	    printf("->%s\n", key);
+void storagePrint(storage_t *storage, void (*printFunction)(void*,FILE*), FILE *stream){
+		if( storage != NULL && storage->file_hash != NULL && printFunction != NULL && stream != NULL ){
+		int k;
+		icl_entry_t *entry;
+		char *key;
+		void *value;
+		icl_hash_t *hash_table = storage->file_hash;
+		icl_hash_foreach(hash_table, k, entry, key, value)
+			(*printFunction)(value, stream);
+	}
 }

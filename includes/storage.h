@@ -20,6 +20,6 @@ void storageDestroy(storage_t *storage, void (*free_key)(void*), void (*free_dat
 int storageGetNumElements(storage_t *storage);
 int storageGetSizeElements(storage_t *storage);
 queue_t* storageGetNElems(storage_t *storage, int N);
-void storagePrint(storage_t *storage);
+void storagePrint(storage_t *storage, void (*printFunction)(void*,FILE*), FILE *stream);
 
 #endif
