@@ -8,13 +8,16 @@ INC_FOLDER = includes
 SRC_FOLDER = src
 OBJS_FOLDER = objs
 BIN_FOLDER = bin
+SCRIPTS_FOLDER = scripts
+CONFIG_FOLDER = config
+TESTS_FOLDER = tests
 
 CLIENT_OBJS = utils.o client.o queue.o api.o message.o client_handlers.o client_params.o
 SERVER_OBJS = signal_handler.o config_parser.o utils.o thread_utils.o queue.o server.o message.o storage.o icl_hash.o cache.o file.o
 
 all:  $(BIN_FOLDER)/client $(BIN_FOLDER)/server
 
-.PHONY: clean test1 test2 serverStart
+.PHONY: clean test1 serverStart
 
 # generazione client
 $(BIN_FOLDER)/client: $(patsubst %.o,$(OBJS_FOLDER)/%.o,$(CLIENT_OBJS))
@@ -35,12 +38,12 @@ clean:
 	-rm -f $(OBJS_FOLDER)/*.o
 	-rm -f $(BIN_FOLDER)/*
 	-rm -f ./expelledFilesDir/*
+	-rm ./mysock
 	
 test1:
 	@echo "Test1"
-	
-test2:
-	@echo "Test2"
+	make $(BIN_FOLDER)/client $(BIN_FOLDER)/server
+	./$(SCRIPTS_FOLDER)/test.sh $(BIN_FOLDER)/server $(CONFIG_FOLDER)/config1.txt $(TESTS_FOLDER)/test1.txt
 	
 serverStart:
-	valgrind -s ./bin/server ./config/config.txt
+	valgrind -s --leak-check=full ./bin/server ./config/config.txt

@@ -108,7 +108,7 @@ int queueIsEmpty(queue_t *queue){
 	Restituisce l'elemento rimosso, NULL se non
 	è stato trovato all'interno della coda
 */
-void* queueRemoveFirstOccurrance(queue_t *queue, void* value, int(*value_compare)(void*, void*)){
+void* queueRemoveFirstOccurrance(queue_t *queue, void* value, int (*value_compare)(void*, void*)){
 	node_t *tmp;
 	
 	if( *value_compare == NULL ) return NULL;

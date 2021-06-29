@@ -49,7 +49,7 @@ int receiveMessageHeader(int socket_fd, message_header_t *hdr){
 	Ritorna 0 in caso di successo della richiesta,
 	-1 altrimenti.
 */
-int sendMessageContent(int socket_fd, size_t size, char* content){
+int sendMessageContent(int socket_fd, size_t size, void* content){
 	if( writen(socket_fd, (void*)&size, sizeof(size_t)) == -1) return -1;
 	if( writen(socket_fd, (void*)content, size) == -1) return -1;
 	return 0;
@@ -83,7 +83,7 @@ int receiveMessageContent(int socket_fd, message_content_t *cnt){
 	Manda il messaggio con i parametri specificati al socket_fd 
 	restituendo 0 in caso di successo o -1 in caso di errore 
 */
-int sendMessage(int socket_fd, opt_keys option, const char *filename, int flags, size_t size, char* content){
+int sendMessage(int socket_fd, opt_keys option, const char *filename, int flags, size_t size, void* content){
 	if( sendMessageHeader(socket_fd, option, filename, flags) == -1 ) return -1;
 	if( sendMessageContent(socket_fd, size, content) == -1 ) return -1;
 	return 0;

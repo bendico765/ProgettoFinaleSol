@@ -215,7 +215,7 @@ int readFileFromServer(queue_t *files_list, char *dest_dirname, struct timespec 
 				free(new_path);
 				continue;
 			}
-			fwrite(file_content, strlen(file_content)*sizeof(char), 1, file);
+			fwrite(file_content, file_size, 1, file);
 			if( print_flag != 0 ) fprintf(stdout, "Il file %s è stato scritto in %s con successo\n", pathname, dest_dirname);
 			free(filename);
 			free(new_path);

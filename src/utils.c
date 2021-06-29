@@ -6,6 +6,12 @@
 #include <unistd.h>
 #include <limits.h>
 
+/*
+	Prova a convertire la stringa s in numero intero
+	e salvarla in n.
+	Restituisce 0 in caso di successo, altro in caso
+	di fallimento.
+*/
 int isIntNumber(const char* s, int* n) {
 	if (s==NULL) 
 		return 1;
@@ -28,6 +34,12 @@ int isIntNumber(const char* s, int* n) {
 	return 1;   // non e' un numero
 }
 
+/*
+	Prova a convertire la stringa s in numero long
+	e salvarla in n.
+	Restituisce 0 in caso di successo, altro in caso
+	di fallimento.
+*/
 int isNumber(const char* s, long* n) {
 	if (s==NULL) 
 		return 1;
@@ -100,9 +112,13 @@ ssize_t writen(int fd, void *ptr, size_t n) {
 }
 
 /*
-	Dato un path assoluto, estrapola il nome del file riferito
+	Dato un path assoluto, estrapola il nome del file riferito.
+	Restituisce il nome del file, NULL in caso di errore.
+	
+	La stringa restituita è allocata dinamicamente e deve
+	essere successivamente liberata.
 */
-char *absolutePathToFilename(char *absolute_path){
+char* absolutePathToFilename(char *absolute_path){
 	char *token;
 	char *old_token;
 	char *copy;
@@ -121,7 +137,8 @@ char *absolutePathToFilename(char *absolute_path){
 /*
 	Dato il percorso relativo ad un file, prova a risolvere il percorso
 	assoluto e lo restituisce in caso di successo, o restituisce NULL
-	in caso di errore (errno settato). La memoria per il path assoluto 
+	in caso di errore (errno settato). 
+	La memoria per il path assoluto 
 	è allocata dinamicamente e deve essere successivamente liberata.
 */
 char *relativeToAbsolutePath(char *relative_path){

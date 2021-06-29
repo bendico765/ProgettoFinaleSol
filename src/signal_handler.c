@@ -12,14 +12,16 @@ void* threadSignalHandler(void *arg){
 	sigset_t *set = ((struct signal_handler_arg_t*)arg)->set;
 	int *signal_handler_pipe = ((struct signal_handler_arg_t*)arg)->signal_pipe;
 	int signum;
+	int termination_flag;
+	
 	// il thread rimane in attesa di segnali
-	int termination_flag = 0;
+	termination_flag = 0;
 	while( termination_flag == 0 ){
 		int ret = sigwait(set, &signum);
 		if( ret != 0 ){
 			errno = ret;
 			perror("Errore sigwait");
-			return NULL;
+			signum = SIGINT;
 		}
 		// gestisco il segnale ricevuto
 		switch( signum ){
@@ -27,7 +29,7 @@ void* threadSignalHandler(void *arg){
 			case SIGQUIT:
 			case SIGHUP:
 				termination_flag = 1;
-				writen(signal_handler_pipe[1], &signum, sizeof(int));
+				if( writen(signal_handler_pipe[1], &signum, sizeof(int)) == -1 ) exit(-1);
 				close(signal_handler_pipe[1]);
 				break;
 			default:
@@ -41,24 +43,31 @@ void* threadSignalHandler(void *arg){
 
 int initializeSignalHandler(int signal_handler_pipe[]){
 	struct sigaction s;
+	struct signal_handler_arg_t *args;
 	sigset_t *set;
-	ce_null(set = malloc(sizeof(sigset_t)), "Errore malloc");
+	
+	set = malloc(sizeof(sigset_t));
+	if( set == NULL ) return -1;
+	
 	// maschero SIGINT. SIGQUIT e SIGHUP
-	ce_val(sigemptyset(set), -1, -1);
-	ce_val(sigaddset(set, SIGINT), -1, -1);
-	ce_val(sigaddset(set, SIGQUIT), -1, -1);
-	ce_val(sigaddset(set, SIGHUP), -1, -1);
-	ce_not_val(pthread_sigmask(SIG_BLOCK, set, NULL), 0, -1);
+	if( sigemptyset(set) == -1 ) return -1;
+	if( sigaddset(set, SIGINT) == -1 ) return -1;
+	if( sigaddset(set, SIGQUIT) == -1 ) return -1;
+	if( sigaddset(set, SIGHUP) == -1 ) return -1;
+	if( pthread_sigmask(SIG_BLOCK, set, NULL) != 0 ) return -1;
+	
 	// ignoro SIGPIPE
 	memset(&s, 0, sizeof(s));
 	s.sa_handler= SIG_IGN;
-	sigaction(SIGPIPE,&s,NULL);
+	if( sigaction(SIGPIPE,&s,NULL) == -1 ) return -1;
+	
 	// lancio il thread per il signal handling
-	struct signal_handler_arg_t *args = malloc(sizeof(signal_handler_arg_t));
+	args = malloc(sizeof(signal_handler_arg_t));
 	args->set = set;
 	args->signal_pipe = signal_handler_pipe;
 	pthread_t thread_id;
-	ce_not_val(pthread_create(&thread_id, NULL, &threadSignalHandler, (void*)args), 0, -1);
-	ce_not_val(pthread_detach(thread_id), 0, -1);
+	if( pthread_create(&thread_id, NULL, &threadSignalHandler, (void*)args) != 0 ) return -1;
+	if( pthread_detach(thread_id) != 0 ) return -1;
+	
 	return 0;
 }

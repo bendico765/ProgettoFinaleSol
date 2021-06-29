@@ -13,7 +13,7 @@ typedef struct{
 
 typedef struct{
 	size_t size; // grandezza (in bytes) del contenuto
-	char *content; // contenuto effetivo del file
+	void *content; // contenuto effetivo del file
 } message_content_t;
 
 typedef struct{
@@ -23,9 +23,9 @@ typedef struct{
 
 int sendMessageHeader(int socket_fd, opt_keys option, const char *filename, int flags);
 int receiveMessageHeader(int socket_fd, message_header_t *hdr);
-int sendMessageContent(int socket_fd, size_t size, char* content);
+int sendMessageContent(int socket_fd, size_t size, void* content);
 int receiveMessageContent(int socket_fd, message_content_t *cnt);
-int sendMessage(int socket_fd, opt_keys option, const char *filename, int flags, size_t size, char* content);
+int sendMessage(int socket_fd, opt_keys option, const char *filename, int flags, size_t size, void* content);
 message_t* receiveMessage(int socket_fd);
 void freeMessage(message_t *msg);
 

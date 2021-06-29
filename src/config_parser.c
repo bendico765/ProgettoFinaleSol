@@ -7,8 +7,6 @@
 
 #define BUFFERSIZE 150
 
-char *strtok_r(char *str, const char *delim, char **saveptr);
-
 /*
 	Ritorna:
 	-1: impossibile aprire file

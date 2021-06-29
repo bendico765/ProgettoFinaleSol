@@ -6,16 +6,19 @@
 
 typedef struct{
 	char pathname[PATH_LEN_MAX]; 
-	char *content;
+	void *content;
 	size_t size; // dimensione del file in byte
-	short freshly_opened; // variabile che indica se il file è stato appena aperto
-	short is_open; // variabile che indica se il file è aperto
+	int freshly_opened; // variabile che indica se il file è stato appena aperto ed ancora non modificato
+	int is_open; // variabile che indica se il file è aperto
 }file_t;
 
-file_t* generateFile(char pathname[], char *content, size_t size);
+file_t* fileGenerate(char pathname[], void *content, size_t size);
 int fileEqual(void *file1, void *file2);
-int fileEdit(file_t *file, void *new_content, size_t new_size);
+int fileEdit(void *file, void *new_content, size_t new_size);
 void filePrintInfo(void *file, FILE *stream);
-void freeFile(void *arg);
+size_t fileGetSize(void *file);
+int fileAreDifferent(void *file1, void *file2);
+void* fileGetPathname(void *file);
+void fileFree(void *arg);
 
 #endif /* _FILE_H */
