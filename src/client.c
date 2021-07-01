@@ -15,6 +15,7 @@ int main(int argc, char *argv[]){
 	termination_flag = 0;
 	ce_null( params = paramsCreate(), "Errore con l'inizializzazione dei parametri client" )
 
+	// parsing degli argomenti
 	while( termination_flag == 0 && (opt = getopt(argc, argv, optstring)) != -1 ){
 		switch(opt){
 			case 'h':
@@ -22,15 +23,12 @@ int main(int argc, char *argv[]){
 				termination_flag = 1;
 				break;
 			case 'f': // specifica del nome del socket AF_UNIX
-				if( fOptionHandler(params, optarg) != 0 ){
-					termination_flag = 1;
-				}
+				if( fOptionHandler(params, optarg) != 0 ) termination_flag = 1;
 				break;
 			case 'w':
 				if( optind < argc && strcmp("-D", argv[optind]) == 0 ){ // controllo se il prossimo parametro è -D
 					// salvo la richiesta per il parametro -D
-					params->w_args = strdup(optarg);
-					if( params->w_args == NULL ){
+					if( (params->w_args = strdup(optarg)) == NULL ){
 						perror("Errore durante l'esecuzione del client");
 						termination_flag = 1;
 					}
@@ -42,8 +40,7 @@ int main(int argc, char *argv[]){
 			case 'W':
 				if( optind < argc && strcmp("-D", argv[optind]) == 0 ){ // controllo se il prossimo parametro è -D
 					// salvo la richiesta per il parametro -D
-					params->W_args = strdup(optarg);
-					if( params->W_args == NULL ){
+					if( (params->W_args = strdup(optarg)) == NULL ){
 						perror("Errore durante l'esecuzione del client");
 						termination_flag = 1;
 					}
@@ -60,12 +57,14 @@ int main(int argc, char *argv[]){
 				else{
 					// eseguo le richieste pendenti specificando la directory
 					if( params->w_args != NULL ){
-						wOptionHandler(params, params->w_args, optarg);
+						if( wOptionHandler(params, params->w_args, optarg) == -1 ) termination_flag = 1;
 						free(params->w_args);
+						params->w_args = NULL;
 					}
 					if( params->W_args != NULL ){
-						WOptionHandler(params, params->W_args, optarg);
+						if( WOptionHandler(params, params->W_args, optarg) == -1 ) termination_flag = 1;
 						free(params->W_args);
+						params->W_args = NULL;
 					}
 				}
 				break;
@@ -89,8 +88,7 @@ int main(int argc, char *argv[]){
 				}
 				if( optind < argc && strcmp("-d", argv[optind]) == 0 ){ // controllo se il prossimo parametro è -d
 					// salvo la richiesta per il parametro -d
-					params->R_args = strdup(optarg);
-					if( params->R_args == NULL ){
+					if( (params->R_args = strdup(optarg)) == NULL ){
 						perror("Errore durante l'esecuzione del client");
 						termination_flag = 1;
 					}

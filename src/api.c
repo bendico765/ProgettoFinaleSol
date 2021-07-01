@@ -24,15 +24,16 @@ static int saved_fd = -1; // fd del socket
 	contenente il contenuto del file, salvando in size
 	la dimensione (in bytes) del file.
 	
-	Restituisce NULL in caso di errore
+	In caso di errore restituisce NULL ed assegna il 
+	valore -1 a size
 */
 void* getFileContent(const char* pathname, size_t *size){
 	FILE *file;
 	struct stat statbuf;
 	size_t file_size;
-	char *content;
-	int read_chars;
+	void *content;
 	
+	*size = -1;
 	if( (file = fopen(pathname, "rb")) != NULL ){
 		// ottenimento dimensione file
 		if( stat(pathname, &statbuf) == -1){
@@ -45,13 +46,8 @@ void* getFileContent(const char* pathname, size_t *size){
 			fclose(file);
 			return NULL;
 		}
-		read_chars = fread((void*)content, file_size, 1, file);
-		content[file_size/sizeof(char)-1] = '\0';
-		if( read_chars == -1 ){
-			free(content);
-			fclose(file);
-			return NULL;
-		}
+		fread((void*)content, file_size, 1, file);
+		
 		fclose(file);
 		*size = file_size;
 		return (void*)content;
@@ -64,12 +60,17 @@ void* getFileContent(const char* pathname, size_t *size){
 	dal server (identificato da fd) in seguito allo sforamento
 	dei limiti della cache, e li salva nella cartella dirname.
 	
-	Se dirname è NULL, i files sono buttati via.
+	Se dirname è NULL, i files non sono salvati su disco.
 	
 	Restituisce 0 in caso di successo, -1 altrimenti.
 */
 int writeReceivedFilesToDir(int fd, const char* dirname, int num_files){
 	message_t *recv_message;
+	
+	if( num_files < 0 ){
+		errno = EINVAL;
+		return -1;
+	}
 
 	// scrivo ogni file espulso nella eventuale directory
 	for(int i = 0; i < num_files; i++){
@@ -87,6 +88,7 @@ int writeReceivedFilesToDir(int fd, const char* dirname, int num_files){
 			
 			// ricavo il nome del file
 			relative_path = absolutePathToFilename(recv_message->hdr->filename);
+			if( relative_path == NULL ) return -1;
 			
 			// ricavo la grandezza del nuovo path
 			new_path_size = strlen(dirname) + strlen(relative_path) + 2;
@@ -100,7 +102,8 @@ int writeReceivedFilesToDir(int fd, const char* dirname, int num_files){
 			// apro il file
 			file = fopen(new_path, "wb");
 			if( file == NULL ) return -1;
-			if( fwrite((const void*)recv_message->cnt->content, recv_message->cnt->size, 1, file) == -1) return -1;
+			
+			fwrite((const void*)recv_message->cnt->content, recv_message->cnt->size, 1, file);
 			
 			fclose(file);
 			free(relative_path);
@@ -137,10 +140,12 @@ int openConnection(const char* sockname, int msec, const struct timespec abstime
 		return -1;
 	}	
 	
+	// impostazione dei parametri della connessione
 	if( (socket_fd = socket(AF_UNIX, SOCK_STREAM, 0)) == -1 ) return -1;
 	strncpy(sa.sun_path, sockname, UNIX_PATH_MAX);
 	strncpy(saved_sockname, sockname, UNIX_PATH_MAX);
 	sa.sun_family = AF_UNIX;
+	
 	if( connect(socket_fd, (struct sockaddr*)&sa, sizeof(sa)) != 0){
 		// faccio i vari tentativi
 		int conn_result = -1;
@@ -152,7 +157,7 @@ int openConnection(const char* sockname, int msec, const struct timespec abstime
 		// continuo ad attendere fino alla connessione o fino allo 
 		// scadere del tempo assoluto
 		while( real_time.tv_sec < abstime.tv_sec && ( conn_result = connect(socket_fd, (struct sockaddr*)&sa, sizeof(sa))) != 0){
-			fprintf(stderr, "Tentativo di connessione\n");
+			fprintf(stdout, "Tentativo di connessione\n");
 			// attendo il tempo del ritardo
 			if( nanosleep(&first_delay, NULL) == -1 ) return -1;
 			// prendo l'ora corrente
@@ -189,8 +194,10 @@ int openConnection(const char* sockname, int msec, const struct timespec abstime
 int openFile(const char* pathname, int flags){
 	int res;
 	message_t *recv_message;
+	
 	// mando la richiesta
 	if( sendMessage(saved_fd, OPEN_FILE_OPT, pathname, flags, 0, NULL) == -1 ) return -1;
+	
 	// ottengo la risposta
 	if( (recv_message = receiveMessage(saved_fd)) == NULL ) return -1;
 	switch( recv_message->hdr->option ){
@@ -213,6 +220,7 @@ int openFile(const char* pathname, int flags){
 		default:
 			break;
 	}
+	
 	freeMessage(recv_message);
 	return res;
 }
@@ -225,11 +233,12 @@ int openFile(const char* pathname, int flags){
 int removeFile(const char* pathname){
 	int res;
 	message_t *recv_message;
+	
 	// mando la richiesta
 	if( sendMessage(saved_fd, REMOVE_FILE_OPT, pathname, 0, 0, NULL) == -1 ) return -1;
+	
 	// ottengo la risposta
-	recv_message = receiveMessage(saved_fd);
-	if( recv_message == NULL ) return -1;
+	if( (recv_message = receiveMessage(saved_fd)) == NULL ) return -1;
 	switch( recv_message->hdr->option ){
 		case SUCCESS:
 			errno = 0;
@@ -242,6 +251,7 @@ int removeFile(const char* pathname){
 		default:
 			break;
 	}
+	
 	freeMessage(recv_message);
 	return res;
 }
@@ -284,7 +294,7 @@ int writeFile(const char* pathname, const char* dirname){
 		void *content;
 		freeMessage(recv_message);
 		// apro il file
-		if( ( content = getFileContent(pathname, &size)) == NULL ) return -1;
+		if( ( content = getFileContent(pathname, &size)) == NULL && size == -1) return -1;
 		// spedisco il file
 		if( sendMessage(saved_fd, WRITE_FILE_OPT, pathname, 0, size, (char*) content) == -1 ) return -1;
 		// ricevo l'esito dell'operazione

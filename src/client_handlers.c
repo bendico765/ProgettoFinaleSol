@@ -108,16 +108,23 @@ int getPathnamesFromDir(char *source_dir, int *num_files, queue_t *pathnames_que
 	Nel caso in cui sia stato impossibile scrivere un file, la funzione non fallisce, ma 
 	prova a scrivere gli altri file rimasti.
 	
-	La funzione restituisce -1 in caso di errore, 0 in caso di successo.
 */
 int writeFilesToServer(queue_t *files_list, char *expelled_files_dirname, struct timespec *delay_time, int print_flag){
-	char *absolute_pathname;
+	char *absolute_pathname; // path assoluto del file da scrivere
 	struct stat statbuf;
 	
 	// scriviamo i files sul server
 	while( (absolute_pathname = (char*) queueRemove(files_list)) != NULL){
+		// controllo se il pathname eccede la lunghezza massima
+		if( strnlen(absolute_pathname, PATH_LEN_MAX+1) >= PATH_LEN_MAX+1 ){
+			fprintf(stderr, "Il file %s ha un percorso che supera la lunghezza massima (%d caratteri)\n", absolute_pathname,PATH_LEN_MAX);
+			free(absolute_pathname);
+			continue;
+		}
+		
 		// ritardo tra due richieste consecutive
-		nanosleep(delay_time, NULL);
+		if( nanosleep(delay_time, NULL) == -1 ) return -1;
+		
 		// creazione del nuovo file
 		if( openFile(absolute_pathname, 1) == -1 ){
 			fprintf(stderr, "Impossibile creare il file %s: %s\n", absolute_pathname, strerror(errno));
@@ -145,10 +152,12 @@ int writeFilesToServer(queue_t *files_list, char *expelled_files_dirname, struct
 }
 
 /*
-	La funzione legge i files (identificati dai loro percorsi assoluti in files_list) 
+	La funzione legge i files (identificati dai loro percorsi in pathnames_list) 
 	dal server (identificato da socket_name) e salva i files letti nella (eventuale)
 	directory dest_dirname. Se dest_dirname è NULL, i files letti sono buttati via.
+	
 	Le richieste di lettura al server si intervallano di un tempo pari a delay_time. 
+	
 	Se print_flag è diverso da 0, sono abilitate le stampe delle operazioni sullo 
 	standard output.
 	
@@ -158,15 +167,23 @@ int writeFilesToServer(queue_t *files_list, char *expelled_files_dirname, struct
 	
 	La funzione restituisce -1 in caso di errore, 0 in caso di successo.
 */
-int readFileFromServer(queue_t *files_list, char *dest_dirname, struct timespec *delay_time, int print_flag){
+int readFileFromServer(queue_t *pathnames_list, char *dest_dirname, struct timespec *delay_time, int print_flag){
 	char *pathname; // percorso del file da leggere
 
 	// lettura dei files da server
-	while( (pathname = (char*) queueRemove(files_list)) != NULL){
+	while( (pathname = (char*) queueRemove(pathnames_list)) != NULL){
 		void *file_content; // contenuto del file letto da server
 		size_t file_size; // grandezza (in bytes) del file letto da server
+		
+		// controllo se il pathname eccede la lunghezza massima
+		if( strnlen(pathname, PATH_LEN_MAX+1) >= PATH_LEN_MAX+1 ){
+			fprintf(stderr, "Il file %s ha un percorso che supera la lunghezza massima (%d caratteri)\n", pathname, PATH_LEN_MAX);
+			free(pathname);
+			continue;
+		}
+		
 		// ritardo tra due richieste consecutive
-		nanosleep(delay_time, NULL);
+		if( nanosleep(delay_time, NULL) == -1 ) return -1;
 		
 		if( readFile(pathname, &file_content, &file_size) == -1 ){
 			fprintf(stderr, "Errore durante la lettura del file %s: %s\n", pathname, strerror(errno));
@@ -188,7 +205,7 @@ int readFileFromServer(queue_t *files_list, char *dest_dirname, struct timespec 
 			if( filename == NULL ){
 				fprintf(stderr, "Errore durante la scrittura su disco del file %s: %s\n", pathname, strerror(errno));
 				free(pathname);
-				free(file_content);
+				if( file_content != NULL ) free(file_content);
 				continue;
 			}
 					
@@ -198,7 +215,7 @@ int readFileFromServer(queue_t *files_list, char *dest_dirname, struct timespec 
 				fprintf(stderr, "Errore durante la scrittura su disco del file %s: %s\n", pathname, strerror(errno));
 				free(filename);
 				free(pathname);
-				free(file_content);
+				if( file_content != NULL ) free(file_content);
 				continue;
 			}
 			strcat(new_path, dest_dirname);
@@ -211,17 +228,19 @@ int readFileFromServer(queue_t *files_list, char *dest_dirname, struct timespec 
 				fprintf(stderr, "Errore durante la scrittura su disco del file %s: %s\n", pathname, strerror(errno));
 				free(filename);
 				free(pathname);
-				free(file_content);
+				if( file_content != NULL ) free(file_content);
 				free(new_path);
 				continue;
 			}
 			fwrite(file_content, file_size, 1, file);
-			if( print_flag != 0 ) fprintf(stdout, "Il file %s è stato scritto in %s con successo\n", pathname, dest_dirname);
+			
+			if( print_flag != 0 ) fprintf(stdout, "Il file %s è stato scritto in %s con successo\n", pathname, new_path);
+			
 			free(filename);
 			free(new_path);
 			fclose(file);
 		}
-		free(file_content);
+		if( file_content != NULL ) free(file_content);
 		free(pathname);
 	}
 
@@ -237,23 +256,26 @@ void hOptionHandler(char *program_name){
 }
 
 int fOptionHandler(client_params_t *params, char *optarg){
-	if( strnlen(optarg, UNIX_PATH_MAX+1) < UNIX_PATH_MAX+1 ){ // controllo che il socket name non sia troppo lungo
-		if( params->socket_name[0] == '\0' )
-			strncpy(params->socket_name, optarg, UNIX_PATH_MAX);
+	if( params != NULL ){
+		if( strnlen(optarg, UNIX_PATH_MAX+1) < UNIX_PATH_MAX+1 ){ // controllo che il socket name non superi la lunghezza massima
+			if( params->socket_name[0] == '\0' )
+				strncpy(params->socket_name, optarg, UNIX_PATH_MAX);
+			else{
+				fprintf(stderr, "Un nome per il socket è già stato definito\n");
+				return -1;
+			}
+		}
 		else{
-			fprintf(stderr, "Un nome per il socket è già stato definito\n");
+			fprintf(stderr, "Il socket name supera la lunghezza consentita (%d caratteri)\n", UNIX_PATH_MAX);
 			return -1;
 		}
+		if(openConnection(params->socket_name, 0, (struct timespec){0,0}) == -1){
+			perror("Errore nella connessione con il server");
+			return -1;
+		}
+		return 0;
 	}
-	else{
-		fprintf(stderr, "Il socket name supera la lunghezza consentita (%d caratteri)\n", UNIX_PATH_MAX);
-		return -1;
-	}
-	if(openConnection(params->socket_name, 0, (struct timespec){0,0}) == -1){
-		perror("Errore nella connessione con il server");
-		return -1;
-	}
-	return 0;
+	return -1;
 }
 
 /*
@@ -280,11 +302,17 @@ int cOptionHandler(client_params_t *params, char *optarg){
 
 	// rimozione dei files richiesti
 	while( (pathname = (char*) queueRemove(args_option)) != NULL){
-		if( removeFile(pathname) != 0 ){
-			fprintf(stderr, "Errore durante la rimozione del file %s: %s\n", pathname, strerror(errno));
+		// controllo che il pathname non superi la lunghezza massima consentita
+		if( strnlen(pathname, PATH_LEN_MAX+1) >= PATH_LEN_MAX+1 ){
+			fprintf(stderr, "Il percorso %s supera la lunghezza massima consentita ( %d caratteri )\n", pathname, PATH_LEN_MAX);
 		}
 		else{
-			if( params->p_flag != 0 ) fprintf(stdout, "File %s rimosso con successo\n", pathname);
+			if( removeFile(pathname) != 0 ){
+				fprintf(stderr, "Errore durante la rimozione del file %s: %s\n", pathname, strerror(errno));
+			}
+			else{
+				if( params->p_flag != 0 ) fprintf(stdout, "File %s rimosso con successo\n", pathname);
+			}
 		}
 		free(pathname);
 	}
@@ -359,7 +387,7 @@ int wOptionHandler(client_params_t *params, char *optarg, char *expelled_files_d
 			break;
 	}
 	
-	// salvataggio in to_send_files i pathanames dei files
+	// salvataggio in to_send_files dei pathanames dei files
 	// da mandare al server
 	if( getPathnamesFromDir(source_directory, &num_files, to_send_files) != 0 ){
 		perror("Errore durante la lettura dei files da mandare");

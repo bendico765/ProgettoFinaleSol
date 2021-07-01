@@ -5,6 +5,8 @@
 #include "cache.h"
 #include "queue.h"
 
+#include <stdio.h>
+
 typedef struct{
 	icl_hash_t *elem_hash; // struttura per salvare gli elementi
 	cache_t *cache; // struttura per la gestione della politica di caching

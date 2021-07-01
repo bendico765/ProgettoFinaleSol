@@ -4,7 +4,7 @@
 #include <signal.h>
 
 struct signal_handler_arg_t{
-	sigset_t *set; // maschera impostata dal main
+	sigset_t *set; // maschera di segnali da ascoltare
 	int *signal_pipe; // pipe per comunicazione main / signal-handler
 } signal_handler_arg_t;
 

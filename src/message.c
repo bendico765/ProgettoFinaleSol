@@ -100,6 +100,14 @@ message_t* receiveMessage(int socket_fd){
 	if( ( msg = malloc(sizeof(message_t)) ) == NULL ) return NULL;
 	if( ( hdr = malloc(sizeof(message_header_t)) ) == NULL ) return NULL;
 	if( ( cnt = malloc(sizeof(message_content_t)) ) == NULL ) return NULL;
+	
+	// inizializzazione valori
+	hdr->option = 0;
+	memset((void*)hdr->filename, '\0', PATH_LEN_MAX);
+	hdr->flags = 0;
+	cnt->content = NULL;
+	cnt->size = 0;
+	
 
 	// ricezione header
 	if( receiveMessageHeader(socket_fd, hdr) <= 0 ){

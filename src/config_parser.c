@@ -8,16 +8,23 @@
 #define BUFFERSIZE 150
 
 /*
+	La funzione legge i parametri di configurazione del server
+	dal file identificato da pathname e li salva nella struttura
+	puntata da server_config.
+
 	Ritorna:
+	 0: lettura terminata con successo
 	-1: impossibile aprire file
 	-2: errore durante il parsing del file
 */
-int parseConfigFile(char *filename, config_t *server_config){
+int parseConfigFile(char *pathname, config_t *server_config){
 	char buffer[BUFFERSIZE];
+	char *saveptr;
 	FILE *file;
 	
-	if( (file = fopen(filename, "r")) == NULL ){ return -1; }
-	char *saveptr = NULL;
+	if( (file = fopen(pathname, "r")) == NULL ) return -1; 
+	
+	saveptr = NULL;
 	while( fgets(buffer, BUFFERSIZE, file) != NULL ){
 		char *param = strtok_r(buffer, "=", &saveptr);
 		char *value = strtok_r(NULL, "\n", &saveptr);

@@ -7,7 +7,9 @@
 #include <unistd.h>
 #include <stdio.h>
 
-// THREAD SIGNAL HANDLER PERSONALIZZATO
+/*
+	Thread signal handler personalizzato
+*/
 void* threadSignalHandler(void *arg){
 	sigset_t *set = ((struct signal_handler_arg_t*)arg)->set;
 	int *signal_handler_pipe = ((struct signal_handler_arg_t*)arg)->signal_pipe;
@@ -41,6 +43,20 @@ void* threadSignalHandler(void *arg){
 	return NULL;
 }
 
+/*
+	Funzione per inizializzare e lanciare un thread signal 
+	handler.
+	
+	Il thread è blocca i segnali SIGINT, SIGQUIT e SIGHUP
+	ed ignora il segnale SIGPIPE.
+	
+	Il parametro signal_handler_pipe è una pipe dove
+	il signal handler scrive l'intero identificativo
+	del segnale ricevuto.
+	
+	Restituisce 0 nel caso in cui il thread sia lanciato
+	con successo, -1 in caso di errore.
+*/
 int initializeSignalHandler(int signal_handler_pipe[]){
 	struct sigaction s;
 	struct signal_handler_arg_t *args;

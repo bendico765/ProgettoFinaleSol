@@ -12,7 +12,7 @@ typedef struct{
 } message_header_t;
 
 typedef struct{
-	size_t size; // grandezza (in bytes) del contenuto
+	size_t size; // grandezza in bytes del contenuto
 	void *content; // contenuto effetivo del file
 } message_content_t;
 

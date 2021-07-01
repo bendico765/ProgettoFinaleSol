@@ -18,9 +18,7 @@ do
 	$line &
 done
 
-sleep 20
+sleep 15
 
 echo "Terminazione server"
-
-# terminazione server
 kill -1 $SERVER_PID

@@ -5,7 +5,7 @@
 
 typedef struct{
 	int thread_workers; // numero di thread workers
-	int max_memory; // massima quantità memorizzabile in MB
+	int max_memory; // massima quantità memorizzabile in bytes
 	int max_num_files; // massimo numero di file memorizzabili
 	int max_connections; // massimo numero di client che si possono connettere contemporaneamnte
 	char socket_name[UNIX_PATH_MAX]; // nome del socket

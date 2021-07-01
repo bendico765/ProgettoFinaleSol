@@ -1,5 +1,6 @@
 #include "queue.h"
 #include <stdlib.h>
+#include <time.h>
 
 /*
 	Crea ed inizializza una coda vuota, restituendo
@@ -11,7 +12,8 @@ queue_t* queueCreate(){
 	if( new_queue == NULL ) return NULL;
 	new_queue->head_node = NULL;
 	new_queue->tail_node = NULL;
-	
+	new_queue->len = 0;
+		
 	return new_queue;
 }
 
@@ -20,7 +22,7 @@ queue_t* queueCreate(){
 	Restituisce NULL in caso di errore.
 */
 node_t* queueInsert(queue_t *queue, void *value){
-	if( queue == NULL || value == NULL ) return NULL;
+	if( queue == NULL ) return NULL;
 	
 	node_t *new_node = malloc(sizeof(node_t));
 	if( new_node == NULL ) return NULL;
@@ -38,6 +40,8 @@ node_t* queueInsert(queue_t *queue, void *value){
 		queue->head_node->prec_node = new_node;
 		queue->head_node = new_node;
 	}
+	
+	queue->len += 1;
 	
 	return new_node;
 }
@@ -73,8 +77,10 @@ void* queueRemove(queue_t *queue){
 	void *value;
 	node_t *removed_node;
 	
+	if( queue == NULL ) return NULL;
+	
 	if( ( removed_node = queue->tail_node) != NULL ){
-		if( queue->tail_node == queue->head_node ){
+		if( queue->tail_node == queue->head_node ){ // vi è un solo nodo nella lista
 			queue->head_node = NULL;
 			queue->tail_node = NULL;
 		}
@@ -82,6 +88,7 @@ void* queueRemove(queue_t *queue){
 			queue->tail_node = removed_node->prec_node;
 			queue->tail_node->next_node = NULL;
 		}
+		queue->len -= 1;
 		value = removed_node->value;
 		free(removed_node);
 		return value;
@@ -93,7 +100,7 @@ void* queueRemove(queue_t *queue){
 	Restituisce 0 se la coda è vuota, -1 altrimenti
 */
 int queueIsEmpty(queue_t *queue){
-	if( queue->head_node == NULL ){
+	if( queue == NULL || queue->head_node == NULL ){
 		return 0;
 	}
 	else{
@@ -111,7 +118,7 @@ int queueIsEmpty(queue_t *queue){
 void* queueRemoveFirstOccurrance(queue_t *queue, void* value, int (*value_compare)(void*, void*)){
 	node_t *tmp;
 	
-	if( *value_compare == NULL ) return NULL;
+	if( queue == NULL || *value_compare == NULL ) return NULL;
 	
 	tmp = queue->tail_node;
 	while( tmp != NULL ){
@@ -135,6 +142,7 @@ void* queueRemoveFirstOccurrance(queue_t *queue, void* value, int (*value_compar
 			if( tmp == queue->tail_node ){
 				queue->tail_node = left_node;
 			}
+			queue->len -= 1;
 			free(tmp);
 			return removed_value;
 		}
@@ -149,41 +157,39 @@ void* queueRemoveFirstOccurrance(queue_t *queue, void* value, int (*value_compar
 	Restituisce il numero di elementi nella coda
 */
 int queueLen(queue_t *queue){
-	int counter = 0;
-	node_t *tmp;
-	
-	if( queue == NULL ){
-		return 0;
-	}
-	
-	tmp = queue->head_node;
-	while( tmp != NULL ){
-		counter += 1;
-		tmp = tmp->next_node;
-	}
-	return counter;
+	return queue->len;
 }
 
 /*
-	Restituisce una coda contenente N elementi appartenenti
-	al parametro queue, o NULL in caso di errore.
+	Restituisce una coda contenente N elementi distinti 
+	appartenenti al parametro queue, o NULL in caso di errore.
 	
 	Gli elementi nella coda restituita non sono copie, ma 
 	sono gli elementi originali della coda specificata
 	come parametro.
 */
-queue_t* queueGetNElems(queue_t *queue, int N){
+queue_t* queueGetNElems(queue_t *queue, int requested_items){
 	queue_t *shallow_queue;
-	node_t *tmp;
-	int counter;
+	node_t *tmp; // iteratore della coda
+	double remaining_items; // elementi non ancora passati al vaglio dell'iteratore
 	
-	if( queue == NULL || (shallow_queue = queueCreate()) == NULL ) return NULL;
-	
+	if( queue == NULL || queue->len == 0 || requested_items > queue->len || (shallow_queue = queueCreate()) == NULL ) return NULL;
+		
 	tmp = queue->head_node;
-	counter = 0;
-	while( tmp != NULL && counter < N){
-		if( queueInsert(shallow_queue, tmp->value) == NULL ) return NULL;
-		counter += 1;
+	remaining_items = (double) queue->len;
+	
+	// scorro la coda finchè non ho selezionato tutti
+	// gli elementi rimasti
+	while( requested_items > 0 ){
+		double probability = ((double)requested_items) / remaining_items; // probabilità di scegliere l'elemento attuale in tmp
+		double rand_value = (double) rand() / RAND_MAX;
+		
+		if( rand_value <= probability ){
+			if( queueInsert(shallow_queue, tmp->value) == NULL ) return NULL;
+			requested_items -= 1;
+		}
+		
+		remaining_items -= 1;
 		tmp = tmp->next_node;
 	}
 	

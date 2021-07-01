@@ -2,6 +2,7 @@
 #define _CLIENT_PARAMS_H
 
 #include "utils.h"
+#include <time.h>
 
 typedef struct{
 	int p_flag; // flag delle stampe su stdout

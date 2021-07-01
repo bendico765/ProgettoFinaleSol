@@ -1,0 +1,12 @@
+./bin/client -f mysock -p -W files/img6.jpg
+./bin/client -f mysock -p -W files/file1
+./bin/client -f mysock -p -W files/img3.jpg
+./bin/client -f mysock -p -W files/file2
+./bin/client -f mysock -p -W files/img1.jpg
+./bin/client -f mysock -p -W files/img4.jpg
+./bin/client -f mysock -p -W files/file3
+./bin/client -f mysock -p -W files/file4
+./bin/client -f mysock -p -W files/img5.jpg
+./bin/client -f mysock -p -W files/file5
+./bin/client -f mysock -p -W files/sample1.mp3
+./bin/client -f mysock -p -W files/img2.jpg

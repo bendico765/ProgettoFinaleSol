@@ -17,7 +17,7 @@ SERVER_OBJS = signal_handler.o config_parser.o utils.o thread_utils.o queue.o se
 
 all:  $(BIN_FOLDER)/client $(BIN_FOLDER)/server
 
-.PHONY: clean test1 serverStart
+.PHONY: clean test1 test2 serverStart
 
 # generazione client
 $(BIN_FOLDER)/client: $(patsubst %.o,$(OBJS_FOLDER)/%.o,$(CLIENT_OBJS))
@@ -43,7 +43,12 @@ clean:
 test1:
 	@echo "Test1"
 	make $(BIN_FOLDER)/client $(BIN_FOLDER)/server
-	./$(SCRIPTS_FOLDER)/test.sh $(BIN_FOLDER)/server $(CONFIG_FOLDER)/config1.txt $(TESTS_FOLDER)/test1.txt
+	./$(SCRIPTS_FOLDER)/test1.sh $(BIN_FOLDER)/server $(CONFIG_FOLDER)/config1.txt $(TESTS_FOLDER)/test1.txt
+	
+test2:
+	@echo "Test2"
+	make $(BIN_FOLDER)/client $(BIN_FOLDER)/server
+	./$(SCRIPTS_FOLDER)/test2.sh $(BIN_FOLDER)/server $(CONFIG_FOLDER)/config2.txt $(TESTS_FOLDER)/test2.txt
 	
 serverStart:
-	valgrind -s --leak-check=full ./bin/server ./config/config.txt
+	valgrind -s --leak-check=full --track-origins=yes $(BIN_FOLDER)/server $(CONFIG_FOLDER)/config.txt

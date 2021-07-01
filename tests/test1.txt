@@ -6,11 +6,15 @@
 ./bin/client -p -t 200 -f mysock -t -200
 ./bin/client -p -t 200 -f mysock -W file1
 ./bin/client -p -t 200 -f mysock -W files/file1,files/file2
-./bin/client -p -t 200 -f mysock -W files/file1,files/filex,files/file2
-./bin/client -p -t 200 -f mysock -W files/file1,files/filex,files/file2
+./bin/client -p -t 200 -f mysock -W files/img1.jpg,files/filex,files/img2.jpg
+./bin/client -p -t 200 -f mysock -W files/img3.jpg,files/filex,files/file2
 ./bin/client -p -t 200 -f mysock -W files/file1 -D expDir
 ./bin/client -p -t 200 -f mysock -W files/file1,files/file2,files/file3 -D expelledFilesDir
 ./bin/client -p -t 200 -f mysock -W files/file1 -r /home/gianluca/Scrivania/ProgettoFinaleSol/files/file1 -d expelledFilesDir/
+./bin/client -p -t 200 -f mysock -R 2 -d expelledFilesDir/
 ./bin/client -p -t 200 -f mysock -W files/file1 -r /home/gianluca/Scrivania/ProgettoFinaleSol/files/file1 -d expelledFilesDir/ -W files/file11 -R 2 -d expelledFilesDir/ -c /home/gianluca/Scrivania/ProgettoFinaleSol/files/file1,/home/gianluca/Scrivania/ProgettoFinaleSol/files/file11
 ./bin/client -p -t 200 -f mysock -w files/ -c /home/gianluca/Scrivania/ProgettoFinaleSol/files/file1,/home/gianluca/Scrivania/ProgettoFinaleSol/files/file11
 ./bin/client -p -t 200 -f mysock -W files/file11 -r /home/gianluca/Scrivania/ProgettoFinaleSol/files/file11 -d expelledFilesDir/ -c /home/gianluca/Scrivania/ProgettoFinaleSol/files/file11
+./bin/client -p -t 200 -f mysock -R 0
+./bin/client -p -t 200 -f mysock -R 0 -d expelledFilesDir/
+
