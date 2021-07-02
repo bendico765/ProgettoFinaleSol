@@ -12,32 +12,46 @@ SCRIPTS_FOLDER = scripts
 CONFIG_FOLDER = config
 TESTS_FOLDER = tests
 
-CLIENT_OBJS = utils.o client.o queue.o api.o message.o client_handlers.o client_params.o
-SERVER_OBJS = signal_handler.o config_parser.o utils.o thread_utils.o queue.o server.o message.o storage.o icl_hash.o cache.o file.o
+SERVER_FOLDER = server
+CLIENT_FOLDER = client
+UTILS_FOLDER = utils
+
+SERVER_OBJS = server.o signal_handler.o config_parser.o thread_utils.o storage.o icl_hash.o cache.o file.o
+CLIENT_OBJS = client.o api.o client_handlers.o client_params.o
+UTILS_OBJS = utils.o message.o queue.o
 
 all:  $(BIN_FOLDER)/client $(BIN_FOLDER)/server
 
 .PHONY: clean test1 test2 serverStart
 
 # generazione client
-$(BIN_FOLDER)/client: $(patsubst %.o,$(OBJS_FOLDER)/%.o,$(CLIENT_OBJS))
+$(BIN_FOLDER)/client: $(patsubst %.o,$(OBJS_FOLDER)/$(CLIENT_FOLDER)/%.o,$(CLIENT_OBJS)) $(patsubst %.o,$(OBJS_FOLDER)/$(UTILS_FOLDER)/%.o,$(UTILS_OBJS))
 	$(CC) $(CFLAGS) $^ -o $@
+	
+$(OBJS_FOLDER)/$(CLIENT_FOLDER)/%.o: $(SRC_FOLDER)/$(CLIENT_FOLDER)/%.c 
+	$(CC) $(CFLAGS) $^ -c -o $@
 
 # generazione server
-$(BIN_FOLDER)/server: $(patsubst %.o,$(OBJS_FOLDER)/%.o,$(SERVER_OBJS)) 
+$(BIN_FOLDER)/server: $(patsubst %.o,$(OBJS_FOLDER)/$(SERVER_FOLDER)/%.o,$(SERVER_OBJS)) $(patsubst %.o,$(OBJS_FOLDER)/$(UTILS_FOLDER)/%.o,$(UTILS_OBJS))
 	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
-		
-# generazione file oggetto
-$(OBJS_FOLDER)/%.o: $(SRC_FOLDER)/%.c
+	
+$(OBJS_FOLDER)/$(SERVER_FOLDER)/%.o: $(SRC_FOLDER)/$(SERVER_FOLDER)/%.c
 	$(CC) $(CFLAGS) $^ -c -o $@
 	
+# generazione file oggetto utils
+$(OBJS_FOLDER)/$(UTILS_FOLDER)/%.o: $(SRC_FOLDER)/$(UTILS_FOLDER)/%.c
+	$(CC) $(CFLAGS) $^ -c -o $@
+		
 # PHONY TARGETS
 		
 clean:
 	@echo "Rimozione files"
-	-rm -f $(OBJS_FOLDER)/*.o
+	-rm -f $(OBJS_FOLDER)/$(SERVER_FOLDER)/*.o
+	-rm -f $(OBJS_FOLDER)/$(CLIENT_FOLDER)/*.o
+	-rm -f $(OBJS_FOLDER)/$(UTILS_FOLDER)/*.o
 	-rm -f $(BIN_FOLDER)/*
 	-rm -f ./expelledFilesDir/*
+	-rm -f ./log.txt
 	-rm ./mysock
 	
 test1:

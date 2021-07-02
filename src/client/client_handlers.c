@@ -307,6 +307,9 @@ int cOptionHandler(client_params_t *params, char *optarg){
 			fprintf(stderr, "Il percorso %s supera la lunghezza massima consentita ( %d caratteri )\n", pathname, PATH_LEN_MAX);
 		}
 		else{
+			// ritardo tra due richieste consecutive
+			if( nanosleep(&params->delay_time, NULL) == -1 ) return -1;
+			
 			if( removeFile(pathname) != 0 ){
 				fprintf(stderr, "Errore durante la rimozione del file %s: %s\n", pathname, strerror(errno));
 			}

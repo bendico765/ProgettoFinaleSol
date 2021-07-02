@@ -22,10 +22,11 @@ queue_t* queueCreate(){
 	Restituisce NULL in caso di errore.
 */
 node_t* queueInsert(queue_t *queue, void *value){
-	if( queue == NULL ) return NULL;
+	node_t *new_node;
 	
-	node_t *new_node = malloc(sizeof(node_t));
-	if( new_node == NULL ) return NULL;
+	if( queue == NULL ) return NULL;
+	if( (new_node = malloc(sizeof(node_t))) == NULL ) return NULL;
+	
 	new_node->value = value;
 	new_node->next_node = NULL;
 	new_node->prec_node = NULL;
@@ -47,7 +48,7 @@ node_t* queueInsert(queue_t *queue, void *value){
 }
 
 /*
-	Dealloca tutte le strutture della coda, ed usa la funzione
+	Dealloca tutto il contenuto della coda, ed usa la funzione
 	free_value per deallocare il contenuto dei nodi.
 	Restituisce 0 in caso di successo, -1 altrimenti.
 */
@@ -157,7 +158,8 @@ void* queueRemoveFirstOccurrance(queue_t *queue, void* value, int (*value_compar
 	Restituisce il numero di elementi nella coda
 */
 int queueLen(queue_t *queue){
-	return queue->len;
+	if( queue != NULL ) return queue->len;
+	return 0;
 }
 
 /*
@@ -167,16 +169,24 @@ int queueLen(queue_t *queue){
 	Gli elementi nella coda restituita non sono copie, ma 
 	sono gli elementi originali della coda specificata
 	come parametro.
+	
+	Se il numero di elementi richiesti è maggiore di quelli
+	effettivamente, vengono restituiti tutti
+	gli elementi della coda.
 */
 queue_t* queueGetNElems(queue_t *queue, int requested_items){
-	queue_t *shallow_queue;
+	queue_t *shallow_queue; // coda in cui salvare gli elementi da restituire
 	node_t *tmp; // iteratore della coda
 	double remaining_items; // elementi non ancora passati al vaglio dell'iteratore
+	int queue_len;
 	
-	if( queue == NULL || queue->len == 0 || requested_items > queue->len || (shallow_queue = queueCreate()) == NULL ) return NULL;
-		
+	queue_len = queueLen(queue);
+	if( queue == NULL || queue_len == 0 || (shallow_queue = queueCreate()) == NULL ) return NULL;
+	
+	if( requested_items > queue_len ) requested_items = queue_len;
+	
 	tmp = queue->head_node;
-	remaining_items = (double) queue->len;
+	remaining_items = (double) queue_len;
 	
 	// scorro la coda finchè non ho selezionato tutti
 	// gli elementi rimasti

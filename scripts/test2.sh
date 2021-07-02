@@ -12,10 +12,10 @@ SERVER_PID=$!
 # attesa caricamento server
 sleep 5
 
-# lettura ed esecuzione parallela dei casi di test
-cat $3 | sort -R | while read line
+# lettura ed esecuzione dei casi di test
+cat $3 | while read line
 do
-	$line &
+	$line
 done
 
 sleep 10

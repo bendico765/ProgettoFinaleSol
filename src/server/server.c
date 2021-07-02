@@ -281,7 +281,7 @@ int writeFileHandler(int fd, message_t *msg, FILE *logfile, storage_t *storage, 
 					file_t *expelled_file;
 					
 					ce_less1(lock(&logfile_lock), "Errore lock logfile");
-					fprintf(logfile, "%s : Terminata con successo ed espulsione di %d files dallo storage\n", opt_string, num_expelled_files);
+					fprintf(logfile, "%s : Terminata con successo (%ld bytes scritti) ed espulsione di %d files dallo storage\n", opt_string, file_msg->cnt->size, num_expelled_files);
 					ce_less1(unlock(&logfile_lock), "Errore unlock logfile");
 					
 					res = sendMessage(fd, CACHE_SUBSTITUTION, NULL, num_expelled_files, 0, NULL);
@@ -306,7 +306,7 @@ int writeFileHandler(int fd, message_t *msg, FILE *logfile, storage_t *storage, 
 				}
 				else{
 					ce_less1(lock(&logfile_lock), "Errore lock logfile");
-					fprintf(logfile, "%s : Terminata con successo\n", opt_string);
+					fprintf(logfile, "%s : Terminata con successo (%ld bytes scritti)\n", opt_string, file_msg->cnt->size);
 					ce_less1(unlock(&logfile_lock), "Errore unlock logfile");
 					
 					res = sendMessage(fd, SUCCESS, NULL, 0, 0, NULL);
@@ -370,46 +370,34 @@ int readNFileHandler(int fd, message_t *msg, FILE *logfile, storage_t *storage){
 	queue_t *shallow_copy_queue;
 	int res = 0;
 	int num_requested_files = msg->hdr->flags;
-	int num_files_available;
+	int num_files_sent;
 	char opt_string[LOG_MSG_LEN];
 	
 	snprintf(opt_string, LOG_MSG_LEN, "THREAD [%ld] : readNFile(%d)", pthread_self(), msg->hdr->flags);
 		
 	ce_less1( lock(&storage_lock), "Errore lock storage readFile" );
-	num_files_available = storageGetNumElements(storage);
 	
-	if( num_requested_files <= 0 || num_requested_files > num_files_available ){ // leggo e mando tutti i files disponibili nello storage
-		ce_less1(lock(&logfile_lock), "Errore lock logfile");
-		fprintf(logfile, "%s : Invio di %d files\n", opt_string, num_files_available);
-		ce_less1(unlock(&logfile_lock), "Errore unlock logfile");
-		
-		shallow_copy_queue = storageGetNElems(storage, num_files_available);
-		// mando il numero di files disponibili
-		res = sendMessage(fd, READ_N_FILE_OPT, NULL, num_files_available, 0, NULL);
-		if( res == 0 ){ // se non ci sono stati errori, mando i files
-			while( (file = queueRemove(shallow_copy_queue)) != NULL){
-				res = sendMessage(fd, READ_N_FILE_OPT, file->pathname, 0, file->size, file->content);
-				if( res != 0 ) break;
-			}
-		}
-	}
-	else{ // mando il numero di files richiesti
-		ce_less1(lock(&logfile_lock), "Errore lock logfile");
-		fprintf(logfile, "%s : Invio di %d files\n", opt_string, num_requested_files);
-		ce_less1(unlock(&logfile_lock), "Errore unlock logfile");
-		
-		shallow_copy_queue = storageGetNElems(storage, num_requested_files);
-		// mando il numero di files disponibili
-		res = sendMessage(fd, READ_N_FILE_OPT, NULL, num_requested_files, 0, NULL);
-		if( res == 0 ){
-			// mando i files
-			while( (file = queueRemove(shallow_copy_queue)) != NULL){
-				res = sendMessage(fd, READ_N_FILE_OPT, file->pathname, 0, file->size, file->content);
-				if( res != 0 ) break;
-			}
-		}
+	if( num_requested_files <= 0 ){
+		num_requested_files = storageGetNumElements(storage);
 	}
 	
+	// prelevo gli elementi richiesti dallo storage
+	shallow_copy_queue = storageGetNElems(storage, num_requested_files);
+	num_files_sent = queueLen(shallow_copy_queue);
+	
+	ce_less1(lock(&logfile_lock), "Errore lock logfile");
+	fprintf(logfile, "%s : Invio di %d files\n", opt_string, num_files_sent);
+	ce_less1(unlock(&logfile_lock), "Errore unlock logfile");
+	
+	// mando il numero di files disponibili
+	res = sendMessage(fd, READ_N_FILE_OPT, NULL, num_files_sent, 0, NULL);
+	if( res == 0 ){ // se non ci sono stati errori, mando i files
+		while( (file = queueRemove(shallow_copy_queue)) != NULL){
+			res = sendMessage(fd, READ_N_FILE_OPT, file->pathname, 0, file->size, file->content);
+			if( res != 0 ) break;
+		}
+	}
+
 	ce_less1( unlock(&storage_lock), "Errore unlock storage readFile" );
 	
 	queueDestroy(shallow_copy_queue, NULL);

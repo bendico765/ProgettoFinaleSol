@@ -108,7 +108,6 @@ message_t* receiveMessage(int socket_fd){
 	cnt->content = NULL;
 	cnt->size = 0;
 	
-
 	// ricezione header
 	if( receiveMessageHeader(socket_fd, hdr) <= 0 ){
 		free(hdr);
