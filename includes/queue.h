@@ -26,8 +26,9 @@ queue_t* queueCreate();
 node_t* queueInsert(queue_t *queue, void *value);
 int queueDestroy(queue_t *queue, void (*free_value)(void*));
 void* queueRemove(queue_t *queue);
-int queueIsEmpty(queue_t *queue);
+void* queueRemoveByNode(queue_t *queue, node_t *node);
 void* queueRemoveFirstOccurrance(queue_t *queue, void* value, int(*value_compare)(void*, void*));
+int queueIsEmpty(queue_t *queue);
 int queueLen(queue_t *queue);
 queue_t* queueGetNElems(queue_t *queue, int N); // richiede di chiamare srand() per generare una sequenza casuale
 

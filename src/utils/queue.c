@@ -98,15 +98,44 @@ void* queueRemove(queue_t *queue){
 }
 
 /*
-	Restituisce 0 se la coda è vuota, -1 altrimenti
+	Rimuove il nodo passato come parametro dalla coda,
+	gestendo la logica dei puntatori dell lista ed i
+	contatori interni.
+	
+	Nota bene: il nodo passato come parametro viene deallocato.
+	
+	Restituisce il contenuto del nodo rimosso in caso
+	di successo, NULL altrimenti.
 */
-int queueIsEmpty(queue_t *queue){
-	if( queue == NULL || queue->head_node == NULL ){
-		return 0;
+void* queueRemoveByNode(queue_t *queue, node_t *node){
+	void *removed_value;
+	node_t *right_node;
+	node_t *left_node;
+			
+	if( queue == NULL || node == NULL ) return NULL;
+	
+	removed_value = node->value;
+	right_node = node->next_node;
+	left_node = node->prec_node;
+	// sistemo i puntatori dei nodi a destra ed a sinistra 
+	// del nodo con l'elemento trovato
+	if( right_node != NULL ){
+		right_node->prec_node = node->prec_node;
 	}
-	else{
-		return -1;
+	if( left_node != NULL ){
+		left_node->next_node = node->next_node;
 	}
+	// sistemo i puntatori alla testa ed alla coda 
+	// della lista
+	if( node == queue->head_node ){
+		queue->head_node = right_node;
+	}
+	if( node == queue->tail_node ){
+		queue->tail_node = left_node;
+	}
+	queue->len -= 1;
+	free(node);
+	return removed_value;
 }
 
 /*
@@ -114,7 +143,8 @@ int queueIsEmpty(queue_t *queue){
 	partendo dalla fine della coda ed usando la funzione 
 	value_compare per confrontare i valori.
 	Restituisce l'elemento rimosso, NULL se non
-	è stato trovato all'interno della coda
+	è stato trovato all'interno della coda o se i
+	parametri non erano validi
 */
 void* queueRemoveFirstOccurrance(queue_t *queue, void* value, int (*value_compare)(void*, void*)){
 	node_t *tmp;
@@ -124,34 +154,25 @@ void* queueRemoveFirstOccurrance(queue_t *queue, void* value, int (*value_compar
 	tmp = queue->tail_node;
 	while( tmp != NULL ){
 		if( value_compare(value, tmp->value) == 0 ){ // elemento trovato
-			void *removed_value = tmp->value;
-			node_t *right_node = tmp->next_node;
-			node_t *left_node = tmp->prec_node;
-			// sistemo i puntatori dei nodi a destra ed a sinistra 
-			// del nodo con l'elemento trovato
-			if( right_node != NULL ){
-				right_node->prec_node = tmp->prec_node;
-			}
-			if( left_node != NULL ){
-				left_node->next_node = tmp->next_node;
-			}
-			// sistemo i puntatori alla testa ed alla coda 
-			// della lista
-			if( tmp == queue->head_node ){
-				queue->head_node = right_node;
-			}
-			if( tmp == queue->tail_node ){
-				queue->tail_node = left_node;
-			}
-			queue->len -= 1;
-			free(tmp);
-			return removed_value;
+			return queueRemoveByNode(queue, tmp);
 		}
 		else{
 			tmp = tmp->prec_node;
 		}
 	}
 	return NULL;
+}
+
+/*
+	Restituisce 0 se la coda è vuota, -1 altrimenti
+*/
+int queueIsEmpty(queue_t *queue){
+	if( queue == NULL || queue->head_node == NULL ){
+		return 0;
+	}
+	else{
+		return -1;
+	}
 }
 
 /*
@@ -180,8 +201,7 @@ queue_t* queueGetNElems(queue_t *queue, int requested_items){
 	double remaining_items; // elementi non ancora passati al vaglio dell'iteratore
 	int queue_len;
 	
-	queue_len = queueLen(queue);
-	if( queue == NULL || queue_len == 0 || (shallow_queue = queueCreate()) == NULL ) return NULL;
+	if( queue == NULL || (queue_len = queueLen(queue)) == 0 || (shallow_queue = queueCreate()) == NULL ) return NULL;
 	
 	if( requested_items > queue_len ) requested_items = queue_len;
 	

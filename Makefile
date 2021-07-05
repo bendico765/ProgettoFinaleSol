@@ -16,7 +16,7 @@ SERVER_FOLDER = server
 CLIENT_FOLDER = client
 UTILS_FOLDER = utils
 
-SERVER_OBJS = server.o signal_handler.o config_parser.o thread_utils.o storage.o icl_hash.o cache.o file.o
+SERVER_OBJS = server.o signal_handler.o config_parser.o thread_utils.o storage.o icl_hash.o fifo_cache.o file.o
 CLIENT_OBJS = client.o api.o client_handlers.o client_params.o
 UTILS_OBJS = utils.o message.o queue.o
 

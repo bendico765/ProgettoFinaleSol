@@ -7,6 +7,12 @@
 
 #define BUFFERSIZE 150
 
+cache_type_t getCacheTypeCode(char *cache_type){
+	if( strcmp("FIFO", cache_type) == 0 ) return FIFO;
+	if( strcmp("LFU", cache_type) == 0 ) return LFU;
+	return INVALID;
+}
+
 /*
 	La funzione legge i parametri di configurazione del server
 	dal file identificato da pathname e li salva nella struttura
@@ -73,6 +79,10 @@ int parseConfigFile(char *pathname, config_t *server_config){
 			if( isIntNumber(value, &(server_config->num_buckets_file)) != 0 ){
 				return -2;
 			}
+			continue;
+		}
+		if( strcmp(param, "CACHE_POLICY") == 0 ){
+			server_config->cache_type = getCacheTypeCode(value);
 			continue;
 		}
 		memset(buffer, '\0', BUFFERSIZE);

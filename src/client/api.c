@@ -131,7 +131,7 @@ int openConnection(const char* sockname, int msec, const struct timespec abstime
 	int socket_fd;
 	struct sockaddr_un sa;
 	
-	if( msec >= 1000 ){ // massimo valore in msec consentito
+	if( msec < 0 ){ // massimo valore in msec consentito
 		errno = EINVAL;
 		return -1;
 	}
@@ -148,9 +148,15 @@ int openConnection(const char* sockname, int msec, const struct timespec abstime
 	
 	if( connect(socket_fd, (struct sockaddr*)&sa, sizeof(sa)) != 0){
 		// faccio i vari tentativi
+		long nanoseconds;
+		time_t seconds;
 		int conn_result = -1;
 		struct timespec real_time;
-		struct timespec first_delay = {0, msec*1000000};
+		struct timespec first_delay;
+		
+		seconds = msec/1000;
+		nanoseconds =  (msec - seconds*1000)*1000000;
+		first_delay = (struct timespec) {seconds, nanoseconds};
 		
 		if( clock_gettime(CLOCK_REALTIME, &real_time) == -1 ) return -1;
 		

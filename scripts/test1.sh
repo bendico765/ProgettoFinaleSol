@@ -6,7 +6,7 @@
 # $3: percorso al file con i casi di test
 
 # partenza server
-valgrind -s --leak-check=full $1 $2 &
+valgrind --leak-check=full $1 $2 &
 SERVER_PID=$!
 
 # attesa caricamento server
