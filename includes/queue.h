@@ -24,6 +24,7 @@ typedef struct queue_t{
 
 queue_t* queueCreate();
 node_t* queueInsert(queue_t *queue, void *value);
+int queueReinsert(queue_t *queue, node_t *node);
 int queueDestroy(queue_t *queue, void (*free_value)(void*));
 void* queueRemove(queue_t *queue);
 void* queueRemoveByNode(queue_t *queue, node_t *node);

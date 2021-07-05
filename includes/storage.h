@@ -2,6 +2,7 @@
 #define _STORAGE_H
 
 #include "fifo_cache.h"
+#include "lru_cache.h"
 #include "queue.h"
 #include "cache_type.h"
 

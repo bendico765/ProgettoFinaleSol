@@ -55,8 +55,8 @@ storage_t* storageCreate(int nbuckets, unsigned int (*hashFunction)(void*), int 
 		case FIFO: 
 			storage->cache = (void*) fifoCacheCreate(nbuckets, hashFunction, hashKeyCompare, max_size, max_num_elems);
 			break;
-		case LFU: 
-			//storage->cache = (void*) lfuCacheCreate(nbuckets, hashFunction, hashKeyCompare, max_size, max_num_elems);
+		case LRU: 
+			storage->cache = (void*) lruCacheCreate(nbuckets, hashFunction, hashKeyCompare, max_size, max_num_elems);
 			break;
 		default:
 			free(storage);
@@ -90,8 +90,8 @@ void* storageFind(storage_t *storage, void *key){
 		switch( storage->cache_type ){
 			case FIFO: 
 				return fifoCacheFind((fifo_cache_t*)storage->cache, key);
-			case LFU:
-				//return lfuCacheFind((lfu_cache_t*)storage->cache, key);
+			case LRU:
+				return lruCacheFind((lru_cache_t*)storage->cache, key);
 			default:
 				return NULL;
 		}
@@ -122,9 +122,9 @@ queue_t* storageInsert(storage_t *storage, void *key, void *elem){
 		case FIFO:
 			return expelled_elements = fifoCacheInsert((fifo_cache_t*)storage->cache, key, elem, storage->getKey, storage->getSize);
 			break;
-		case LFU:
-			//return expelled_elements = lfuCacheInsert((lfu_cache_t*)storage->cache, key, elem, storage->getKey, storage->getSize);
-			//break;
+		case LRU:
+			return expelled_elements = lruCacheInsert((lru_cache_t*)storage->cache, key, elem, storage->getKey, storage->getSize);
+			break;
 		default:
 			errno = EINVAL;
 			return NULL;
@@ -159,9 +159,9 @@ int storageRemove(storage_t *storage, void *key, void (*freeKey)(void*), void (*
 		case FIFO:
 			content = fifoCacheRemove((fifo_cache_t*) storage->cache, key, storage->getSize);
 			break;
-		case LFU:
-			// content = lfuCacheRemove((fifo_cache_t*) storage->cache, key, storage->getSize);
-			// break;
+		case LRU:
+			content = lruCacheRemove((lru_cache_t*) storage->cache, key, storage->getSize);
+			break;
 		default: // tipo di cache invalido
 			errno = EINVAL;
 			return -1;
@@ -207,8 +207,8 @@ queue_t* storageEditElem(storage_t *storage, void *key, void *new_content, size_
 	switch( storage->cache_type ){
 		case FIFO:
 			return fifoCacheEditElem((fifo_cache_t*)storage->cache, key, new_content, new_size, storage->getKey, elemEdit, storage->getSize, areElemsDifferent);
-		case LFU:
-			//return lfuCacheEditElem((lfu_cache_t*)storage->cache, key, new_content, new_size, storage->getKey, elemEdit, storage->getSize, areElemsDifferent);
+		case LRU:
+			return lruCacheEditElem((lru_cache_t*)storage->cache, key, new_content, new_size, storage->getKey, elemEdit, storage->getSize, NULL);
 		default:
 			errno = EINVAL;
 			return NULL;
@@ -229,8 +229,8 @@ void storageDestroy(storage_t *storage, void (*freeKey)(void*), void (*freeData)
 			case FIFO:
 				fifoCacheDestroy((fifo_cache_t*)storage->cache, freeKey, freeData);
 				break;
-			case LFU:
-				//lfuCacheDestroy((lfu_cache_t*)storage->cache, freeKey, freeData);
+			case LRU:
+				lruCacheDestroy((lru_cache_t*)storage->cache, freeKey, freeData);
 				break;
 			default:
 				break;
@@ -248,8 +248,8 @@ size_t storageGetNumElements(storage_t *storage){
 	switch( storage->cache_type ){
 		case FIFO:
 			return fifoCacheGetCurrentNumElements((fifo_cache_t*) storage->cache);
-		case LFU:
-			//return lfuCacheGetCurrentNumElements((lfu_cache_t*) storage->cache);
+		case LRU:
+			return lruCacheGetCurrentNumElements((lru_cache_t*) storage->cache);
 		default:
 			return 0;
 	}
@@ -265,8 +265,8 @@ size_t storageGetSizeElements(storage_t *storage){
 	switch( storage->cache_type ){
 		case FIFO:
 			return fifoCacheGetCurrentSize((fifo_cache_t*) storage->cache);
-		case LFU:
-			//return lfuCacheGetCurrentSize((lfu_cache_t*) storage->cache);
+		case LRU:
+			return lruCacheGetCurrentSize((lru_cache_t*) storage->cache);
 		default:
 			return 0;
 	}
@@ -288,8 +288,8 @@ queue_t* storageGetNElems(storage_t *storage, int N){
 	switch( storage->cache_type ){
 		case FIFO:
 			return fifoCacheGetNElemsFromCache((fifo_cache_t*) storage->cache, N);
-		case LFU:
-			//return lfuCacheGetNElemsFromCache((lfu_cache_t*) storage->cache, N);
+		case LRU:
+			return lruCacheGetNElemsFromCache((lru_cache_t*) storage->cache, N);
 		default:
 			errno = EINVAL;
 			return NULL;
@@ -306,8 +306,8 @@ void storagePrint(storage_t *storage, void (*printFunction)(void*,FILE*), FILE *
 		case FIFO:
 			fifoCachePrint((fifo_cache_t*)storage->cache, printFunction, stream);
 			break;
-		case LFU:
-			//lfuCachePrint((fifo_cache_t*)storage->cache, printFunction, stream);
+		case LRU:
+			lruCachePrint((lru_cache_t*)storage->cache, printFunction, stream);
 			break;
 		default:
 			break;

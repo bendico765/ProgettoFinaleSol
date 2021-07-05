@@ -1,25 +1,25 @@
-#include "fifo_cache.h"
+#include "lru_cache.h"
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
 
 /*
-	Crea una cache FIFO di dimensione massima in bytes 
+	Crea una cache LRU di dimensione massima in bytes 
 	pari a max_size e massimo numero di elementi pari a 
 	max_num_elems.
 	Inizializza a zero i contatori e la coda di elementi,
 	e restituisce la cache allocata, NULL in caso di errore 
 	(impostando errno).
 */
-fifo_cache_t* fifoCacheCreate(int nbuckets, unsigned int (*hashFunction)(void*), int (*hashKeyCompare)(void*, void*), size_t max_size, size_t max_num_elems){
-	fifo_cache_t *new_cache;
+lru_cache_t* lruCacheCreate(int nbuckets, unsigned int (*hashFunction)(void*), int (*hashKeyCompare)(void*, void*), size_t max_size, size_t max_num_elems){
+	lru_cache_t *new_cache;
 	
 	if( max_size <= 0 || max_num_elems <= 0 ){
 		errno = EINVAL;
 		return NULL;
 	}
 	
-	new_cache = malloc(sizeof(fifo_cache_t));
+	new_cache = malloc(sizeof(lru_cache_t));
 	if( new_cache == NULL ){ return NULL; }
 	
 	// creazione hash table
@@ -53,7 +53,7 @@ fifo_cache_t* fifoCacheCreate(int nbuckets, unsigned int (*hashFunction)(void*),
 		- EINVAL: parametri invalidi
 		- ENOENT: elemento cercato inesistente
 */
-void* fifoCacheFind(fifo_cache_t *cache, void *key){
+void* lruCacheFind(lru_cache_t *cache, void *key){
 	node_t *elem_node;
 	
 	if( cache != NULL ){
@@ -62,7 +62,12 @@ void* fifoCacheFind(fifo_cache_t *cache, void *key){
 			errno = ENOENT;
 			return NULL;
 		}
-		else return elem_node->value;
+		else{
+			// l'elemento appena trovato viene spostato
+			// nuovamente in testa alla lista
+			queueReinsert(cache->queue, elem_node);
+			return elem_node->value;
+		}
 	}
 	else{
 		errno = EINVAL;
@@ -86,7 +91,7 @@ void* fifoCacheFind(fifo_cache_t *cache, void *key){
 		- EFBIG: elemento troppo grande per entrare in cache
 		- ENOMEM: memoria esaurita
 */
-queue_t* fifoCacheInsert(fifo_cache_t *cache, void *key, void *elem, void* (*getKey)(void*), size_t (*getSize)(void*)){
+queue_t* lruCacheInsert(lru_cache_t *cache, void *key, void *elem, void* (*getKey)(void*), size_t (*getSize)(void*)){
 	node_t *new_node; // nuovo nodo contenente l'elemento da inserire
 	queue_t *expelled_elements; // lista elementi espulsi
 	size_t elem_size; // grandezza in bytes dell'elemento da inserire
@@ -159,7 +164,10 @@ queue_t* fifoCacheInsert(fifo_cache_t *cache, void *key, void *elem, void* (*get
 /*
 	La funzione aggiorna il contenuto dell'elemento nello storage 
 	identificato da key, impostando new_content come nuovo contenuto
-	e new_size come nuova dimensione dell'elemento. 
+	e new_size come nuova dimensione dell'elemento. In questa politica,
+	l'aggiornamento dell'elemento porta al suo spostamento in testa
+	alla lista.
+	
 	Se la modifica del contenuto dell'elemento causa un overflow
 	della cache, gli elementi espulsi vengono eliminati nello storage
 	e restituiti all'interno di una coda.
@@ -174,22 +182,19 @@ queue_t* fifoCacheInsert(fifo_cache_t *cache, void *key, void *elem, void* (*get
 	La funzione getSize, preso un elemento nello storage, ne restituisce
 	la dimensione in bytes.
 	
-	La funzione areElemsDifferent, presi due elementi della cache, 
-	restituisce 0 se sono elementi diversi, -1 altrimenti.
-	
 	Valori di errno:
 		- EINVAL: parametri invalidi
 		- EFBIG: elemento troppo grande per entrare in cache
 		- ENOMEM: memoria esaurita
 */
-queue_t* fifoCacheEditElem(fifo_cache_t *cache, void *key, void *new_content, size_t elem_new_size, void* (*getKey)(void*), int (*elemEdit)(void*,void*,size_t), size_t (*getSize)(void*), int (*areElemsDifferent)(void*,void*)){
+queue_t* lruCacheEditElem(lru_cache_t *cache, void *key, void *new_content, size_t elem_new_size, void* (*getKey)(void*), int (*elemEdit)(void*,void*,size_t), size_t (*getSize)(void*), int (*areElemsDifferent)(void*,void*)){
 	queue_t *expelled_elements; // coda elementi espulsi
 	node_t *elem_node;
 	void *expelled_element;
 	void *element_to_edit;
 	size_t element_actual_size;
 
-	if( cache == NULL || key == NULL || *getKey == NULL || *elemEdit == NULL || *getSize == NULL || *areElemsDifferent == NULL){
+	if( cache == NULL || key == NULL || *getKey == NULL || *elemEdit == NULL || *getSize == NULL){
 		errno = EINVAL;
 		return NULL;
 	}
@@ -216,8 +221,11 @@ queue_t* fifoCacheEditElem(fifo_cache_t *cache, void *key, void *new_content, si
 		return NULL;
 	}
 	
+	// riporto l'elemento in testa alla lista
+	queueReinsert(cache->queue, elem_node);
+	
 	// continuo a rimuovere elementi finchè la modifica dell'elemento comporterebbe overflow
-	while( (cache->cur_size - element_actual_size + elem_new_size ) > cache->max_size && (expelled_element =  queueRemoveFirstOccurrance(cache->queue, element_to_edit, areElemsDifferent)) != NULL ){
+	while( (cache->cur_size - element_actual_size + elem_new_size ) > cache->max_size && (expelled_element =  queueRemove(cache->queue)) != NULL ){
 		// aggiorno le stats della cache
 		cache->cur_size -=  (*getSize)(expelled_element);
 		cache->cur_num_elems -= 1;
@@ -249,7 +257,7 @@ queue_t* fifoCacheEditElem(fifo_cache_t *cache, void *key, void *new_content, si
 		- ENOENT: elemento inesistente
 	
 */
-void* fifoCacheRemove(fifo_cache_t *cache, void *key, size_t (*getSize)(void*)){
+void* lruCacheRemove(lru_cache_t *cache, void *key, size_t (*getSize)(void*)){
 	node_t *node_to_remove;
 	void *node_content;
 	
@@ -285,7 +293,7 @@ void* fifoCacheRemove(fifo_cache_t *cache, void *key, size_t (*getSize)(void*)){
 	Valori di errno:
 		- EINVAL: parametri invalidi
 */
-queue_t* fifoCacheGetNElemsFromCache(fifo_cache_t *cache, int N){
+queue_t* lruCacheGetNElemsFromCache(lru_cache_t *cache, int N){
 	if( cache == NULL ) return NULL;
 	return queueGetNElems(cache->queue, N);
 }
@@ -294,7 +302,7 @@ queue_t* fifoCacheGetNElemsFromCache(fifo_cache_t *cache, int N){
 	Restituisce la dimensione in bytes degli elementi
 	attualmente salvati in cache
 */
-size_t fifoCacheGetCurrentSize(fifo_cache_t *cache){
+size_t lruCacheGetCurrentSize(lru_cache_t *cache){
 	if( cache == NULL ) return 0;
 	return cache->cur_size;
 }
@@ -302,15 +310,15 @@ size_t fifoCacheGetCurrentSize(fifo_cache_t *cache){
 /*
 	Restituisce il numero di elementi attualmente salvati in cache
 */
-size_t fifoCacheGetCurrentNumElements(fifo_cache_t *cache){
+size_t lruCacheGetCurrentNumElements(lru_cache_t *cache){
 	if( cache == NULL ) return 0;
 	return cache->cur_num_elems;
 }
 
 /*
-	Dealloca la cache e la coda FIFO utilizzata da essa.
+	Dealloca la cache e la coda utilizzata da essa.
 */
-void fifoCacheDestroy(fifo_cache_t *cache, void (*freeKey)(void*), void (*freeData)(void*)){
+void lruCacheDestroy(lru_cache_t *cache, void (*freeKey)(void*), void (*freeData)(void*)){
 	if( cache != NULL ){
 		icl_hash_destroy(cache->elem_hash, freeKey, NULL);
 		queueDestroy(cache->queue, freeData);
@@ -322,7 +330,7 @@ void fifoCacheDestroy(fifo_cache_t *cache, void (*freeKey)(void*), void (*freeDa
 	Stampa tutto il contenuto della cache, usando la funzione
 	printFunction per stampare un elemento, sullo stream desiderato.
 */
-void fifoCachePrint(fifo_cache_t *cache, void (*printFunction)(void*,FILE*), FILE *stream){
+void lruCachePrint(lru_cache_t *cache, void (*printFunction)(void*,FILE*), FILE *stream){
 	node_t *tmp;
 	
 	if( cache != NULL && cache->queue != NULL && *printFunction != NULL && stream != NULL){

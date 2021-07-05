@@ -9,7 +9,7 @@
 
 cache_type_t getCacheTypeCode(char *cache_type){
 	if( strcmp("FIFO", cache_type) == 0 ) return FIFO;
-	if( strcmp("LFU", cache_type) == 0 ) return LFU;
+	if( strcmp("LRU", cache_type) == 0 ) return LRU;
 	return INVALID;
 }
 

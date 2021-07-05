@@ -48,6 +48,49 @@ node_t* queueInsert(queue_t *queue, void *value){
 }
 
 /*
+	Sposta il nodo passato come parametro in testa alla coda
+	( assumento che il nodo faccia parte della coda ).
+	Restituisce 0 in caso di successo, -1 altrimenti.
+*/
+int queueReinsert(queue_t *queue, node_t *node){
+	node_t *right_node;
+	node_t *left_node;
+	
+	if( queue == NULL || node == NULL ) return -1;
+	
+	right_node = node->next_node;
+	left_node = node->prec_node;
+	// sistemo i puntatori dei nodi a destra ed a sinistra 
+	// del nodo con l'elemento trovato
+	if( right_node != NULL ){
+		right_node->prec_node = node->prec_node;
+	}
+	if( left_node != NULL ){
+		left_node->next_node = node->next_node;
+	}
+	// sistemo i puntatori alla testa ed alla coda 
+	// della lista
+	if( node == queue->head_node ){
+		queue->head_node = right_node;
+	}
+	if( node == queue->tail_node ){
+		queue->tail_node = left_node;
+	}
+	// reinserisco il nodo rimosso alla testa della lista
+	if( queue->head_node == NULL ){
+		queue->head_node = node;
+		queue->tail_node = node;
+	}
+	else{
+		node->next_node = queue->head_node;
+		queue->head_node->prec_node = node;
+		queue->head_node = node;
+	}
+	
+	return 0;
+}
+
+/*
 	Dealloca tutto il contenuto della coda, ed usa la funzione
 	free_value per deallocare il contenuto dei nodi.
 	Restituisce 0 in caso di successo, -1 altrimenti.

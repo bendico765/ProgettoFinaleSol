@@ -4,7 +4,7 @@
 typedef enum{
 	INVALID = -1,
 	FIFO = 0,
-	LFU = 1
+	LRU = 1
 } cache_type_t;
 
 #endif
