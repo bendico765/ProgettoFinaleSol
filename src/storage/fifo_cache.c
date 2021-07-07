@@ -197,7 +197,7 @@ queue_t* fifoCacheInsert(fifo_cache_t *cache, void *key, void *elem){
 	restituisce 0 se sono elementi diversi, -1 altrimenti.
 	
 	Valori di errno:
-		- ENOENT: l'elemento identificato da key non esiste 
+		- ENOENT: l'elemento identificato da key non esiste
 		- EINVAL: parametri invalidi
 		- EFBIG: elemento troppo grande per entrare in cache
 		- ENOMEM: memoria esaurita

@@ -1,13 +1,13 @@
 CC = gcc
-CFLAGS = -Wall -std=c99 $(INCLUDES) $(DEFINES)
-INCLUDES = -I $(INC_FOLDER)
-LIBS = -lpthread
+CFLAGS = -Wall -std=c99 $(DEFINES)
+LIBS = -lstorage -lpthread
 DEFINES = -D_POSIX_C_SOURCE=200112L -D_GNU_SOURCE
 
 INC_FOLDER = includes
 SRC_FOLDER = src
 OBJS_FOLDER = objs
 BIN_FOLDER = bin
+LIBS_FOLDER = libs
 SCRIPTS_FOLDER = scripts
 CONFIG_FOLDER = config
 TESTS_FOLDER = tests
@@ -15,40 +15,62 @@ TESTS_FOLDER = tests
 SERVER_FOLDER = server
 CLIENT_FOLDER = client
 UTILS_FOLDER = utils
-
-SERVER_OBJS = server.o signal_handler.o config_parser.o thread_utils.o storage.o icl_hash.o fifo_cache.o lru_cache.o file.o
-CLIENT_OBJS = client.o api.o client_handlers.o client_params.o
-UTILS_OBJS = utils.o message.o queue.o
+STORAGE_FOLDER = storage
 
 all:  $(BIN_FOLDER)/client $(BIN_FOLDER)/server
 
 .PHONY: clean test1 test2 LRU_test2 serverStart
 
-# generazione client
-$(BIN_FOLDER)/client: $(patsubst %.o,$(OBJS_FOLDER)/$(CLIENT_FOLDER)/%.o,$(CLIENT_OBJS)) $(patsubst %.o,$(OBJS_FOLDER)/$(UTILS_FOLDER)/%.o,$(UTILS_OBJS))
+# UTILS
+UTILS_OBJS = utils.o message.o queue.o
+UTILS_INCLUDES = -I $(INC_FOLDER)/$(UTILS_FOLDER)
+UTILS_DEPENDENCIES = $(SRC_FOLDER)/$(UTILS_FOLDER)/%.c
+
+$(OBJS_FOLDER)/$(UTILS_FOLDER)/%.o: $(UTILS_DEPENDENCIES)
+	$(CC) $(CFLAGS) $(UTILS_INCLUDES) $^ -c -o $@
+
+# CLIENT
+CLIENT_OBJS = client.o api.o client_handlers.o client_params.o
+CLIENT_INCLUDES = -I $(INC_FOLDER)/$(CLIENT_FOLDER) -I $(INC_FOLDER)/$(UTILS_FOLDER)
+CLIENT_DEPENDECIES = $(patsubst %.o,$(OBJS_FOLDER)/$(CLIENT_FOLDER)/%.o,$(CLIENT_OBJS)) $(patsubst %.o,$(OBJS_FOLDER)/$(UTILS_FOLDER)/%.o,$(UTILS_OBJS))
+
+$(BIN_FOLDER)/client: $(CLIENT_DEPENDECIES)
 	$(CC) $(CFLAGS) $^ -o $@
 	
 $(OBJS_FOLDER)/$(CLIENT_FOLDER)/%.o: $(SRC_FOLDER)/$(CLIENT_FOLDER)/%.c 
-	$(CC) $(CFLAGS) $^ -c -o $@
+	$(CC) $(CFLAGS) $(CLIENT_INCLUDES) $^ -c -o $@
 
-# generazione server
-$(BIN_FOLDER)/server: $(patsubst %.o,$(OBJS_FOLDER)/$(SERVER_FOLDER)/%.o,$(SERVER_OBJS)) $(patsubst %.o,$(OBJS_FOLDER)/$(UTILS_FOLDER)/%.o,$(UTILS_OBJS))
-	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
+# SERVER
+SERVER_OBJS = server.o signal_handler.o config_parser.o thread_utils.o file.o
+SERVER_INCLUDES = -I $(INC_FOLDER)/$(SERVER_FOLDER) -I $(INC_FOLDER)/$(STORAGE_FOLDER) -I $(INC_FOLDER)/$(UTILS_FOLDER)
+SERVER_DEPENDENCIES = $(patsubst %.o,$(OBJS_FOLDER)/$(SERVER_FOLDER)/%.o,$(SERVER_OBJS)) $(patsubst %.o,$(OBJS_FOLDER)/$(UTILS_FOLDER)/%.o,$(UTILS_OBJS)) $(LIBS_FOLDER)/libstorage.so
+
+$(BIN_FOLDER)/server: $(SERVER_DEPENDENCIES)
+	$(CC) $(CFLAGS) -L $(LIBS_FOLDER) -Wl,-rpath,$(LIBS_FOLDER) $^ -o $@ $(LIBS)
 	
 $(OBJS_FOLDER)/$(SERVER_FOLDER)/%.o: $(SRC_FOLDER)/$(SERVER_FOLDER)/%.c
-	$(CC) $(CFLAGS) $^ -c -o $@
+	$(CC) $(CFLAGS) $(SERVER_INCLUDES) $^ -c -o $@
+
+# LIBRERIA STORAGE
+STORAGE_OBJS = storage.o icl_hash.o fifo_cache.o lru_cache.o
+STORAGE_INCLUDES = -I $(INC_FOLDER)/$(STORAGE_FOLDER) -I $(INC_FOLDER)/$(UTILS_FOLDER)
+STORAGE_DEPENDENCIES = $(patsubst %.o,$(OBJS_FOLDER)/$(STORAGE_FOLDER)/%.o,$(STORAGE_OBJS))
+
+$(LIBS_FOLDER)/libstorage.so: $(STORAGE_DEPENDENCIES)
+	$(CC) -shared -o $@ $^
 	
-# generazione file oggetto utils
-$(OBJS_FOLDER)/$(UTILS_FOLDER)/%.o: $(SRC_FOLDER)/$(UTILS_FOLDER)/%.c
-	$(CC) $(CFLAGS) $^ -c -o $@
-		
+$(OBJS_FOLDER)/$(STORAGE_FOLDER)/%.o: $(SRC_FOLDER)/$(STORAGE_FOLDER)/%.c
+	$(CC) $(CFLAGS) $(STORAGE_INCLUDES) $^ -c -fPIC -o $@
+			
 # PHONY TARGETS
 		
 clean:
 	@echo "Rimozione files"
 	-rm -f $(OBJS_FOLDER)/$(SERVER_FOLDER)/*.o
 	-rm -f $(OBJS_FOLDER)/$(CLIENT_FOLDER)/*.o
+	-rm -f $(OBJS_FOLDER)/$(STORAGE_FOLDER)/*.o
 	-rm -f $(OBJS_FOLDER)/$(UTILS_FOLDER)/*.o
+	-rm -f $(LIBS_FOLDER)/*
 	-rm -f $(BIN_FOLDER)/*
 	-rm -f ./expelledFilesDir/*
 	-rm -f ./log.txt
