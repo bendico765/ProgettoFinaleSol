@@ -41,6 +41,7 @@ storage_t* storageCreate(int nbuckets, unsigned int (*hashFunction)(void*), int 
 			break;
 		default:
 			free(storage);
+			errno = EINVAL;
 			return NULL;
 	}
 	if( storage->cache == NULL ){
@@ -69,9 +70,11 @@ void* storageFind(storage_t *storage, void *key){
 			case LRU:
 				return lruCacheFind((lru_cache_t*)storage->cache, key);
 			default:
+				errno = EINVAL;
 				return NULL;
 		}
 	}
+	errno = EINVAL;
 	return NULL;
 }
 
@@ -166,6 +169,7 @@ int storageRemove(storage_t *storage, void *key, void (*freeKey)(void*), void (*
 	restituisce 0 se sono elementi diversi, -1 altrimenti.
 	
 	Valori di errno:
+		- ENOENT: l'elemento identificato da key non esiste nella cache
 		- EINVAL: parametri invalidi
 		- EFBIG: elemento troppo grande per entrare in cache
 		- ENOMEM: memoria esaurita

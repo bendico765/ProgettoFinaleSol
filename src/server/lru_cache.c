@@ -27,6 +27,20 @@ int lruCacheDefaultAreElemsEqual(void *e1, void *e2){
 	Inizializza a zero i contatori e la coda di elementi,
 	e restituisce la cache allocata, NULL in caso di errore 
 	(impostando errno).
+	
+	Parametri:
+		-nbuckets: numero di buckets da creare
+		-hashFunction: puntatore ad una funzione di hash da usare
+		-hashKeyCompare: puntatore ad una funzione che permette di confrontare due chiavi
+		-max_size: dimensione massima in bytes dello storage
+		-max_num_elems: massimo numero di elementi archiviabili nello storage
+		-getSize: puntatore ad una funzione che restituisce la dimensione in bytes di un elemento dello storage
+		-getKey: puntatore a funzione che, dato un elemento, restituisce una chiave che permetta di identificarlo univocamente 
+		-areElemsEqual: puntatore a funzione che permette di determinare se due elementi sono uguali
+		
+	Valori di errno:
+		- EINVAL: parametri invalidi
+		- ENOMEM: memoria esaurita
 */
 lru_cache_t* lruCacheCreate(int nbuckets, unsigned int (*hashFunction)(void*), int (*hashKeyCompare)(void*, void*), size_t max_size, size_t max_num_elems, size_t (*getSize)(void*), void* (*getKey)(void*), int (*areElemsEqual)(void*,void*)){
 	lru_cache_t *new_cache;
@@ -181,18 +195,13 @@ queue_t* lruCacheInsert(lru_cache_t *cache, void *key, void *elem){
 	Se la modifica del contenuto dell'elemento causa un overflow
 	della cache, gli elementi espulsi vengono eliminati nello storage
 	e restituiti all'interno di una coda.
-	
-	La funzione getKey, dato un elemento nella cache, restituisce una 
-	chiave che permetta di identificarlo univocamente 
-	
+
 	La funzione elemEdit prende 3 parametri: l'elemento da modificare, 
 	il nuovo valore e la nuova grandezza dell'elemento, e restituisce
 	0 in caso di successo della modifica, -1 altrimenti.
-	
-	La funzione getSize, preso un elemento nello storage, ne restituisce
-	la dimensione in bytes.
-	
+
 	Valori di errno:
+		- ENOENT: l'elemento identificato da key non esiste 
 		- EINVAL: parametri invalidi
 		- EFBIG: elemento troppo grande per entrare in cache
 		- ENOMEM: memoria esaurita
@@ -211,7 +220,11 @@ queue_t* lruCacheEditElem(lru_cache_t *cache, void *key, void *new_content, size
 	
 	// cerco l'elemento identificato dalla chiave nella cache
 	elem_node = (node_t*) icl_hash_find(cache->elem_hash, key);
-	if( elem_node == NULL || (element_to_edit = elem_node->value) == NULL ){
+	if( elem_node == NULL ){
+		errno = ENOENT;
+		return NULL;
+	}
+	if( (element_to_edit = elem_node->value) == NULL ){
 		errno = EINVAL;
 		return NULL;
 	}
@@ -232,8 +245,6 @@ queue_t* lruCacheEditElem(lru_cache_t *cache, void *key, void *new_content, size
 	if( expelled_elements == NULL ){ 
 		return NULL;
 	}
-	
-	
 	
 	// continuo a rimuovere elementi finchè la modifica dell'elemento comporterebbe overflow
 	while( (cache->cur_size - element_actual_size + elem_new_size ) > cache->max_size && (expelled_element =  queueRemove(cache->queue)) != NULL ){
@@ -266,7 +277,6 @@ queue_t* lruCacheEditElem(lru_cache_t *cache, void *key, void *new_content, size
 	Valori di errno:
 		- EINVAL: parametri invalidi
 		- ENOENT: elemento inesistente
-	
 */
 void* lruCacheRemove(lru_cache_t *cache, void *key){
 	node_t *node_to_remove;
