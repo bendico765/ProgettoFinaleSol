@@ -125,7 +125,9 @@ int openFileHandler(int fd, message_t *msg, FILE *logfile, storage_t *storage, s
 			
 			ce_less1(lock(&logfile_lock), "Errore lock logfile");
 			if( num_expelled_files > 0 ){
-				fprintf(logfile, "%s : Completata con l'espulsione di %d files dallo storage\n", opt_string, num_expelled_files);		
+				fprintf(logfile, "%s : Completata con l'espulsione di %d files dallo storage\n", opt_string, num_expelled_files);	
+				fprintf(logfile, "Files espulsi:\n");
+				queuePrint(expelled_files, filePrintInfo, logfile);	
 			}
 			else{
 				fprintf(logfile, "%s : Terminata con successo\n", opt_string);	
@@ -324,6 +326,8 @@ int writeFileHandler(int fd, message_t *msg, FILE *logfile, storage_t *storage, 
 					
 					ce_less1(lock(&logfile_lock), "Errore lock logfile");
 					fprintf(logfile, "%s : Terminata con successo (%ld bytes scritti) ed espulsione di %d files dallo storage\n", opt_string, file_msg->cnt->size, num_expelled_files);
+					fprintf(logfile, "Files espulsi:\n");
+					queuePrint(expelled_files, filePrintInfo, logfile);	
 					ce_less1(unlock(&logfile_lock), "Errore unlock logfile");
 					
 					res = sendMessage(fd, CACHE_SUBSTITUTION, NULL, num_expelled_files, 0, NULL);
@@ -440,6 +444,7 @@ int readNFileHandler(int fd, message_t *msg, FILE *logfile, storage_t *storage){
 	
 	ce_less1(lock(&logfile_lock), "Errore lock logfile");
 	fprintf(logfile, "%s : Invio di %d files\n", opt_string, num_files_sent);
+	queuePrint(shallow_copy_queue, filePrintInfo, logfile);
 	ce_less1(unlock(&logfile_lock), "Errore unlock logfile");
 	
 	// mando il numero di files disponibili
@@ -536,6 +541,8 @@ int appendToFileHandler(int fd, message_t *msg, FILE *logfile, storage_t *storag
 				
 				ce_less1(lock(&logfile_lock), "Errore lock logfile");
 				fprintf(logfile, "%s : Terminata con successo, ed espulsione di %d files dallo storage\n", opt_string, num_expelled_files);
+				fprintf(logfile, "Files espulsi:\n");
+				queuePrint(expelled_files, filePrintInfo, logfile);	
 				ce_less1(unlock(&logfile_lock), "Errore unlock logfile");
 				
 				res = sendMessage(fd, CACHE_SUBSTITUTION, NULL, num_expelled_files, 0, NULL);

@@ -22,7 +22,7 @@ UTILS_OBJS = utils.o message.o queue.o
 
 all:  $(BIN_FOLDER)/client $(BIN_FOLDER)/server
 
-.PHONY: clean test1 test2 serverStart
+.PHONY: clean test1 test2 LRU_test2 serverStart
 
 # generazione client
 $(BIN_FOLDER)/client: $(patsubst %.o,$(OBJS_FOLDER)/$(CLIENT_FOLDER)/%.o,$(CLIENT_OBJS)) $(patsubst %.o,$(OBJS_FOLDER)/$(UTILS_FOLDER)/%.o,$(UTILS_OBJS))
@@ -55,14 +55,20 @@ clean:
 	-rm ./mysock
 	
 test1:
-	@echo "Test1"
-	make $(BIN_FOLDER)/client $(BIN_FOLDER)/server
-	./$(SCRIPTS_FOLDER)/test1.sh $(BIN_FOLDER)/server $(CONFIG_FOLDER)/config1.txt $(TESTS_FOLDER)/test1.txt
+	@echo "FIFO Test1"
+	make
+	./$(SCRIPTS_FOLDER)/test1.sh $(BIN_FOLDER)/server $(CONFIG_FOLDER)/FIFO_config1.txt $(TESTS_FOLDER)/FIFO_test1.txt
 	
 test2:
-	@echo "Test2"
-	make $(BIN_FOLDER)/client $(BIN_FOLDER)/server
-	./$(SCRIPTS_FOLDER)/test2.sh $(BIN_FOLDER)/server $(CONFIG_FOLDER)/config2.txt $(TESTS_FOLDER)/test2.txt
+	@echo "FIFO Test2"
+	make
+	./$(SCRIPTS_FOLDER)/test2.sh $(BIN_FOLDER)/server $(CONFIG_FOLDER)/FIFO_config2.txt $(TESTS_FOLDER)/FIFO_test2.txt
+	
+LRU_test2:
+	@echo "LRU Test2"
+	make
+	./$(SCRIPTS_FOLDER)/test2.sh $(BIN_FOLDER)/server $(CONFIG_FOLDER)/LRU_config2.txt $(TESTS_FOLDER)/LRU_test2.txt
 	
 serverStart:
+	make
 	valgrind -s --leak-check=full --track-origins=yes $(BIN_FOLDER)/server $(CONFIG_FOLDER)/config.txt

@@ -9,11 +9,8 @@
 #include <stdio.h>
 
 typedef struct{
-	void *cache; // struttura per la gestione della politica di caching
-	cache_type_t cache_type;
-	size_t (*getSize)(void*); // funzione per calcolare la dimensione in bytes di un elemento nello storage
-	void* (*getKey)(void*); // funzione che, dato un elemento, restituisce una chiave che permetta di identificarlo univocamente 
-	int (*areElemsEqual)(void*,void*); // funzione per determinare se due elementi sono uguali
+	void *cache;
+	cache_type_t cache_type; // tipo di politica di caching
 }storage_t;
 
 storage_t* storageCreate(int nbuckets, unsigned int (*hashFunction)(void*), int (*hashKeyCompare)(void*, void*), size_t (*getSize)(void*), void* (*getKey)(void*), int (*areElemsEqual)(void*,void*), size_t max_size, size_t max_num_elems, cache_type_t cache_type);

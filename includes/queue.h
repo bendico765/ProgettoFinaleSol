@@ -1,8 +1,10 @@
 #if !defined(_QUEUE_H)
 #define _QUEUE_H
 
+#include <stdio.h>
+
 /*  
-	Lista doppiamente linkata con politica fifo
+	Coda doppiamente linkata con politica fifo
 	(inserimenti in testa e rimozioni in coda).
 	
 	Tuttavia vi sono alcune operazioni che violano 
@@ -32,5 +34,6 @@ void* queueRemoveFirstOccurrance(queue_t *queue, void* value, int(*value_compare
 int queueIsEmpty(queue_t *queue);
 int queueLen(queue_t *queue);
 queue_t* queueGetNElems(queue_t *queue, int N); // richiede di chiamare srand() per generare una sequenza casuale
+void queuePrint(queue_t *queue, void (*printFunction)(void*,FILE*), FILE *stream);
 
 #endif

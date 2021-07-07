@@ -3,6 +3,23 @@
 #include <string.h>
 #include <errno.h>
 
+/* 
+	Funzioni predefinite usate dalla cache per svolgere certi compiti, 
+	sono usate nel caso in cui l'utilizzatore non ne specifichi altre. 
+*/
+
+size_t lruCacheDefaultGetSize(void* elem){
+	return sizeof(elem);
+}
+
+void* lruCacheDefaultGetKey(void* elem){
+	return elem;
+}
+
+int lruCacheDefaultAreElemsEqual(void *e1, void *e2){
+	return e1 == e2 ? 0 : -1;
+}
+
 /*
 	Crea una cache LRU di dimensione massima in bytes 
 	pari a max_size e massimo numero di elementi pari a 
@@ -11,7 +28,7 @@
 	e restituisce la cache allocata, NULL in caso di errore 
 	(impostando errno).
 */
-lru_cache_t* lruCacheCreate(int nbuckets, unsigned int (*hashFunction)(void*), int (*hashKeyCompare)(void*, void*), size_t max_size, size_t max_num_elems){
+lru_cache_t* lruCacheCreate(int nbuckets, unsigned int (*hashFunction)(void*), int (*hashKeyCompare)(void*, void*), size_t max_size, size_t max_num_elems, size_t (*getSize)(void*), void* (*getKey)(void*), int (*areElemsEqual)(void*,void*)){
 	lru_cache_t *new_cache;
 	
 	if( max_size <= 0 || max_num_elems <= 0 ){
@@ -36,6 +53,11 @@ lru_cache_t* lruCacheCreate(int nbuckets, unsigned int (*hashFunction)(void*), i
 		free(new_cache); 
 		return NULL; 
 	}
+	
+	// impostazione funzioni
+	new_cache->getSize = *getSize == NULL ? lruCacheDefaultGetSize : getSize;
+	new_cache->getKey = *getKey == NULL ?  lruCacheDefaultGetKey : getKey;
+	new_cache->areElemsEqual = *areElemsEqual == NULL ? lruCacheDefaultAreElemsEqual : areElemsEqual;
 	
 	new_cache->max_size = max_size;
 	new_cache->cur_size = 0;
@@ -64,7 +86,7 @@ void* lruCacheFind(lru_cache_t *cache, void *key){
 		}
 		else{
 			// l'elemento appena trovato viene spostato
-			// nuovamente in testa alla lista
+			// nuovamente in testa alla coda
 			queueReinsert(cache->queue, elem_node);
 			return elem_node->value;
 		}
@@ -91,18 +113,18 @@ void* lruCacheFind(lru_cache_t *cache, void *key){
 		- EFBIG: elemento troppo grande per entrare in cache
 		- ENOMEM: memoria esaurita
 */
-queue_t* lruCacheInsert(lru_cache_t *cache, void *key, void *elem, void* (*getKey)(void*), size_t (*getSize)(void*)){
+queue_t* lruCacheInsert(lru_cache_t *cache, void *key, void *elem){
 	node_t *new_node; // nuovo nodo contenente l'elemento da inserire
 	queue_t *expelled_elements; // lista elementi espulsi
 	size_t elem_size; // grandezza in bytes dell'elemento da inserire
 	void *expelled_element; // elemento rimosso dalla cache in seguito ad overflow
 	
-	if( cache == NULL || elem == NULL || *getKey == NULL || *getSize == NULL){
+	if( cache == NULL || elem == NULL){
 		errno = EINVAL;
 		return NULL;
 	}
 	
-	elem_size = (*getSize)(elem);
+	elem_size = (*cache->getSize)(elem);
 	
 	// se l'elemento è più grande della dimensione totale
 	// della cache non ha senso fare ulteriori controlli
@@ -118,27 +140,15 @@ queue_t* lruCacheInsert(lru_cache_t *cache, void *key, void *elem, void* (*getKe
 	}
 	
 	// controllo l'eventuale sforamento del limite numero elementi
-	if( cache->cur_num_elems == cache->max_num_elems ){
+	// o del limite sulla dimensione massima
+	while( (cache->cur_num_elems == cache->max_num_elems) || (cache->cur_size + elem_size) > cache->max_size ){
 		// rimuovo un elemento dalla cache
 		expelled_element = queueRemove(cache->queue); 
 		// aggiorno le statistiche della cache
-		cache->cur_size -= (*getSize)(expelled_element);
+		cache->cur_size -= (*cache->getSize)(expelled_element);
 		cache->cur_num_elems -= 1;
 		// rimuovo l'elemento espulso dalla tabella hash
-		icl_hash_delete(cache->elem_hash, (*getKey)(expelled_element), NULL, NULL);
-		// inserisco l'elemento espulso nella coda
-		queueInsert(expelled_elements, expelled_element);
-	}
-	// l'elemento da inserire potrebbe ancora essere troppo grande
-	// per la cache, quindi devo continuare ad espellere elementi
-	while( (cache->cur_size + elem_size) > cache->max_size ){
-		// rimuovo un elemento dalla cache
-		expelled_element = queueRemove(cache->queue); 
-		// aggiorno le statistiche della cache
-		cache->cur_size -= (*getSize)(expelled_element);
-		cache->cur_num_elems -= 1;
-		// rimuovo l'elemento espulso dalla tabella hash
-		icl_hash_delete(cache->elem_hash, (*getKey)(expelled_element), NULL, NULL);
+		icl_hash_delete(cache->elem_hash, (*cache->getKey)(expelled_element), NULL, NULL);
 		// inserisco l'elemento espulso nella coda
 		queueInsert(expelled_elements, expelled_element);
 	}
@@ -187,30 +197,32 @@ queue_t* lruCacheInsert(lru_cache_t *cache, void *key, void *elem, void* (*getKe
 		- EFBIG: elemento troppo grande per entrare in cache
 		- ENOMEM: memoria esaurita
 */
-queue_t* lruCacheEditElem(lru_cache_t *cache, void *key, void *new_content, size_t elem_new_size, void* (*getKey)(void*), int (*elemEdit)(void*,void*,size_t), size_t (*getSize)(void*), int (*areElemsDifferent)(void*,void*)){
+queue_t* lruCacheEditElem(lru_cache_t *cache, void *key, void *new_content, size_t elem_new_size, int (*elemEdit)(void*,void*,size_t)){
 	queue_t *expelled_elements; // coda elementi espulsi
 	node_t *elem_node;
 	void *expelled_element;
 	void *element_to_edit;
 	size_t element_actual_size;
 
-	if( cache == NULL || key == NULL || *getKey == NULL || *elemEdit == NULL || *getSize == NULL){
+	if( cache == NULL || key == NULL || *elemEdit == NULL ){
 		errno = EINVAL;
 		return NULL;
 	}
 	
 	// cerco l'elemento identificato dalla chiave nella cache
-	// e calcolo la dimensione
 	elem_node = (node_t*) icl_hash_find(cache->elem_hash, key);
 	if( elem_node == NULL || (element_to_edit = elem_node->value) == NULL ){
 		errno = EINVAL;
 		return NULL;
 	}
-	element_actual_size = (*getSize)(element_to_edit);
+	
+	// riporto l'elemento in testa alla coda
+	queueReinsert(cache->queue, elem_node);
 	
 	// se l'elemento modificato è più grande della dimensione totale
 	// della cache non ha senso fare ulteriori controlli
 	// e termino
+	element_actual_size = (*cache->getSize)(element_to_edit);
 	if( elem_new_size > cache->max_size ){
 		errno = EFBIG;
 		return NULL;
@@ -221,17 +233,16 @@ queue_t* lruCacheEditElem(lru_cache_t *cache, void *key, void *new_content, size
 		return NULL;
 	}
 	
-	// riporto l'elemento in testa alla lista
-	queueReinsert(cache->queue, elem_node);
+	
 	
 	// continuo a rimuovere elementi finchè la modifica dell'elemento comporterebbe overflow
 	while( (cache->cur_size - element_actual_size + elem_new_size ) > cache->max_size && (expelled_element =  queueRemove(cache->queue)) != NULL ){
 		// aggiorno le stats della cache
-		cache->cur_size -=  (*getSize)(expelled_element);
+		cache->cur_size -=  (*cache->getSize)(expelled_element);
 		cache->cur_num_elems -= 1;
 		queueInsert(expelled_elements, expelled_element);
 		// rimuovo l'elemento dallo storage
-		icl_hash_delete(cache->elem_hash, (*getKey)(expelled_element), NULL, NULL);
+		icl_hash_delete(cache->elem_hash, (*cache->getKey)(expelled_element), NULL, NULL);
 	}
 	
 	// aggiorno la dimensione della cache
@@ -257,11 +268,11 @@ queue_t* lruCacheEditElem(lru_cache_t *cache, void *key, void *new_content, size
 		- ENOENT: elemento inesistente
 	
 */
-void* lruCacheRemove(lru_cache_t *cache, void *key, size_t (*getSize)(void*)){
+void* lruCacheRemove(lru_cache_t *cache, void *key){
 	node_t *node_to_remove;
 	void *node_content;
 	
-	if( cache == NULL || key == NULL || *getSize == NULL){
+	if( cache == NULL || key == NULL ){
 		errno = EINVAL;
 		return NULL;
 	}
@@ -274,7 +285,7 @@ void* lruCacheRemove(lru_cache_t *cache, void *key, size_t (*getSize)(void*)){
 		// lo rimuovo dalla tabella hash
 		icl_hash_delete(cache->elem_hash, key, NULL, NULL);
 		// aggiorno i contatori interni
-		cache->cur_size -= (*getSize)(node_content);
+		cache->cur_size -= (*cache->getSize)(node_content);
 		cache->cur_num_elems -= 1;
 		
 		return node_content;
@@ -292,10 +303,24 @@ void* lruCacheRemove(lru_cache_t *cache, void *key, size_t (*getSize)(void*)){
 	
 	Valori di errno:
 		- EINVAL: parametri invalidi
+		- ENOMEM: memoria insufficiente
 */
 queue_t* lruCacheGetNElemsFromCache(lru_cache_t *cache, int N){
-	if( cache == NULL ) return NULL;
-	return queueGetNElems(cache->queue, N);
+	queue_t *shallow_queue;
+	queue_t *elems_queue;
+	void *node_elem;
+	
+	elems_queue = queueCreate();
+	if( cache == NULL || elems_queue == NULL || (shallow_queue = queueGetNElems(cache->queue, N)) == NULL) return NULL;
+	
+	while( (node_elem = queueRemove(shallow_queue)) != NULL ){
+		if( queueInsert(elems_queue, node_elem) == NULL ) return NULL;
+		// riporto l'elemento in testa alla coda della cache
+		lruCacheFind(cache, (*cache->getKey)(node_elem));
+	}
+	
+	queueDestroy(shallow_queue, NULL);
+	return elems_queue;
 }
 
 /*
@@ -327,18 +352,13 @@ void lruCacheDestroy(lru_cache_t *cache, void (*freeKey)(void*), void (*freeData
 }
 
 /*
-	Stampa tutto il contenuto della cache, usando la funzione
-	printFunction per stampare un elemento, sullo stream desiderato.
+	La funzione itera tutto il contenuto della cache ed applica la funzione printFunction
+	su ogni singolo elemento.
+	
+	La funzione printFunction è una funzione che stampa le informazioni relative un elemento
+	prendendo come parametri il puntatore all'elemento ed uno stream su cui stampare.
 */
 void lruCachePrint(lru_cache_t *cache, void (*printFunction)(void*,FILE*), FILE *stream){
-	node_t *tmp;
-	
-	if( cache != NULL && cache->queue != NULL && *printFunction != NULL && stream != NULL){
-		tmp = cache->queue->head_node;
-		while( tmp != NULL ){
-			(*printFunction)(tmp->value, stream);
-			tmp = tmp->next_node;
-		}
-	}
+	if( cache != NULL ) queuePrint(cache->queue, printFunction, stream);
 }
 

@@ -76,6 +76,10 @@ int queueReinsert(queue_t *queue, node_t *node){
 	if( node == queue->tail_node ){
 		queue->tail_node = left_node;
 	}
+	
+	node->next_node = NULL;
+	node->prec_node = NULL;
+	
 	// reinserisco il nodo rimosso alla testa della lista
 	if( queue->head_node == NULL ){
 		queue->head_node = node;
@@ -185,6 +189,11 @@ void* queueRemoveByNode(queue_t *queue, node_t *node){
 	Rimuove dalla coda la prima occorrenza del valore value,
 	partendo dalla fine della coda ed usando la funzione 
 	value_compare per confrontare i valori.
+	
+	value_compare è una funzione che confronta due valori 
+	nella coda e restituisce 0 se sono uguali, un valore diverso
+	altrimenti.
+	
 	Restituisce l'elemento rimosso, NULL se non
 	è stato trovato all'interno della coda o se i
 	parametri non erano validi
@@ -244,8 +253,9 @@ queue_t* queueGetNElems(queue_t *queue, int requested_items){
 	double remaining_items; // elementi non ancora passati al vaglio dell'iteratore
 	int queue_len;
 	
-	if( queue == NULL || (queue_len = queueLen(queue)) == 0 || (shallow_queue = queueCreate()) == NULL ) return NULL;
+	if( queue == NULL || (shallow_queue = queueCreate()) == NULL ) return NULL;
 	
+	queue_len = queueLen(queue);
 	if( requested_items > queue_len ) requested_items = queue_len;
 	
 	tmp = queue->head_node;
@@ -267,5 +277,17 @@ queue_t* queueGetNElems(queue_t *queue, int requested_items){
 	}
 	
 	return shallow_queue;
+}
+
+void queuePrint(queue_t *queue, void (*printFunction)(void*,FILE*), FILE *stream){
+	node_t *tmp;
+	
+	if( queue != NULL && *printFunction != NULL && stream != NULL){
+		tmp = queue->head_node;
+		while( tmp != NULL ){
+			(*printFunction)(tmp->value, stream);
+			tmp = tmp->next_node;
+		}
+	}
 }
 

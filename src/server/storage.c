@@ -3,25 +3,6 @@
 #include <string.h>
 #include <errno.h>
 
-/* 
-	Funzioni predefinite usate dallo storage per svolgere certi compiti, 
-	sono usate nel caso in cui l'utilizzatore non ne specifichi altre. 
-*/
-
-size_t storageDefaultGetSize(void* elem){
-	return sizeof(elem);
-}
-
-void* storageDefaultGetKey(void* elem){
-	return elem;
-}
-
-int storageDefaultAreElemsEqual(void *e1, void *e2){
-	return e1 == e2 ? 0 : -1;
-}
-
-/* Funzioni dello storage */
-
 /*
 	Crea lo storage allocando le strutture dati interne
 	con i parametri passati.
@@ -29,7 +10,7 @@ int storageDefaultAreElemsEqual(void *e1, void *e2){
 	successo, NULL altrimenti (errno impostato)
 	
 	Parametri:
-		-nbuckets: numero di buckets da create
+		-nbuckets: numero di buckets da creare
 		-hashFunction: puntatore ad una funzione di hash da usare
 		-hashKeyCompare: puntatore ad una funzione che permette di confrontare due chiavi
 		-getSize: puntatore ad una funzione che restituisce la dimensione in bytes di un elemento dello storage
@@ -53,10 +34,10 @@ storage_t* storageCreate(int nbuckets, unsigned int (*hashFunction)(void*), int 
 	// creazione cache 
 	switch(cache_type){
 		case FIFO: 
-			storage->cache = (void*) fifoCacheCreate(nbuckets, hashFunction, hashKeyCompare, max_size, max_num_elems);
+			storage->cache = (void*) fifoCacheCreate(nbuckets, hashFunction, hashKeyCompare, max_size, max_num_elems, getSize, getKey, areElemsEqual);
 			break;
 		case LRU: 
-			storage->cache = (void*) lruCacheCreate(nbuckets, hashFunction, hashKeyCompare, max_size, max_num_elems);
+			storage->cache = (void*) lruCacheCreate(nbuckets, hashFunction, hashKeyCompare, max_size, max_num_elems, getSize, getKey, areElemsEqual);
 			break;
 		default:
 			free(storage);
@@ -68,11 +49,6 @@ storage_t* storageCreate(int nbuckets, unsigned int (*hashFunction)(void*), int 
 	}
 	
 	storage->cache_type = cache_type;
-	
-	// impostazione funzioni
-	storage->getSize = *getSize == NULL ? storageDefaultGetSize : getSize;
-	storage->getKey = *getKey == NULL ?  storageDefaultGetKey : getKey;
-	storage->areElemsEqual = *areElemsEqual == NULL ? storageDefaultAreElemsEqual : areElemsEqual;
 	
 	return storage;
 }
@@ -110,8 +86,6 @@ void* storageFind(storage_t *storage, void *key){
 		- ENOMEM: memoria esaurita
 */
 queue_t* storageInsert(storage_t *storage, void *key, void *elem){
-	queue_t *expelled_elements;
-
 	if( storage == NULL ){
 		errno = EINVAL;
 		return NULL;
@@ -120,10 +94,10 @@ queue_t* storageInsert(storage_t *storage, void *key, void *elem){
 	// inserisco l'elemento in cache espellendo eventuali elementi
 	switch( storage->cache_type ){
 		case FIFO:
-			return expelled_elements = fifoCacheInsert((fifo_cache_t*)storage->cache, key, elem, storage->getKey, storage->getSize);
+			return fifoCacheInsert((fifo_cache_t*)storage->cache, key, elem);
 			break;
 		case LRU:
-			return expelled_elements = lruCacheInsert((lru_cache_t*)storage->cache, key, elem, storage->getKey, storage->getSize);
+			return lruCacheInsert((lru_cache_t*)storage->cache, key, elem);
 			break;
 		default:
 			errno = EINVAL;
@@ -133,8 +107,7 @@ queue_t* storageInsert(storage_t *storage, void *key, void *elem){
 
 /*
 	Rimuove l'elemento identificato da key dallo storage, 
-	preservando l'ordine della cache ed aggiornando le 
-	statistiche interne.
+	aggiornando le strutture dati e le statistiche interne.
 	
 	Le funzioni freeKey e freeData sono usate per deallocare
 	la chiave identificatrice dell'elemento e l'elemento. Se 
@@ -150,17 +123,17 @@ queue_t* storageInsert(storage_t *storage, void *key, void *elem){
 int storageRemove(storage_t *storage, void *key, void (*freeKey)(void*), void (*freeData)(void*)){
 	void *content;
 	
-	if( storage == NULL || *storage->getSize == NULL ){
+	if( storage == NULL ){
 		errno = EINVAL;
 		return -1;
 	}
 	
 	switch( storage->cache_type ){
 		case FIFO:
-			content = fifoCacheRemove((fifo_cache_t*) storage->cache, key, storage->getSize);
+			content = fifoCacheRemove((fifo_cache_t*) storage->cache, key);
 			break;
 		case LRU:
-			content = lruCacheRemove((lru_cache_t*) storage->cache, key, storage->getSize);
+			content = lruCacheRemove((lru_cache_t*) storage->cache, key);
 			break;
 		default: // tipo di cache invalido
 			errno = EINVAL;
@@ -206,9 +179,9 @@ queue_t* storageEditElem(storage_t *storage, void *key, void *new_content, size_
 	
 	switch( storage->cache_type ){
 		case FIFO:
-			return fifoCacheEditElem((fifo_cache_t*)storage->cache, key, new_content, new_size, storage->getKey, elemEdit, storage->getSize, areElemsDifferent);
+			return fifoCacheEditElem((fifo_cache_t*)storage->cache, key, new_content, new_size, elemEdit, areElemsDifferent);
 		case LRU:
-			return lruCacheEditElem((lru_cache_t*)storage->cache, key, new_content, new_size, storage->getKey, elemEdit, storage->getSize, NULL);
+			return lruCacheEditElem((lru_cache_t*)storage->cache, key, new_content, new_size, elemEdit);
 		default:
 			errno = EINVAL;
 			return NULL;
@@ -297,7 +270,11 @@ queue_t* storageGetNElems(storage_t *storage, int N){
 }
 
 /*
-	Stampa tutto il contenuto dello storage
+	La funzione itera tutto il contenuto dello storage ed applica la funzione printFunction
+	su ogni singolo elemento.
+	
+	La funzione printFunction è una funzione che stampa le informazioni relative un elemento
+	prendendo come parametri il puntatore all'elemento ed uno stream su cui stampare.
 */
 void storagePrint(storage_t *storage, void (*printFunction)(void*,FILE*), FILE *stream){
 	if( storage == NULL ) return;
