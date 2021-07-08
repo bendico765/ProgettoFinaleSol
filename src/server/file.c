@@ -8,15 +8,18 @@
 	in caso di errore.
 */
 file_t* fileGenerate(char pathname[], void *content, size_t size){
-	file_t *new_file = malloc(sizeof(file_t));
-	if( new_file == NULL ){
+	file_t *new_file;
+	
+	if( (new_file = malloc(sizeof(file_t))) == NULL ){
 		return NULL;
 	}
+	
 	strncpy(new_file->pathname, pathname, PATH_LEN_MAX);
 	new_file->content = content;
 	new_file->size = size;
 	new_file->freshly_opened = 1;
 	new_file->is_open = 1;
+	
 	return new_file;
 }
 
@@ -39,6 +42,7 @@ int fileEqual(void *file1, void *file2){
 */
 int fileEdit(void *file, void *new_content, size_t new_size){
 	file_t *casted_file;
+	
 	if( file == NULL || new_size < 0) return -1;
 	
 	casted_file = (file_t*) file;
@@ -48,6 +52,8 @@ int fileEdit(void *file, void *new_content, size_t new_size){
 	// alloco spazio per il nuovo contenuto
 	casted_file->content = malloc(new_size);
 	if( casted_file->content == NULL ) return -1;
+	
+	// copio il nuovo contenuto
 	memcpy(casted_file->content, new_content, new_size);
 	casted_file->size = new_size;
 	
@@ -60,7 +66,7 @@ int fileEdit(void *file, void *new_content, size_t new_size){
 */
 void filePrintInfo(void *file, FILE *stream){
 	file_t *tmp = (file_t*) file;
-	fprintf(stream, "->%s (%ld bytes)\n", tmp->pathname, tmp->size);
+	if( tmp != NULL ) fprintf(stream, "->%s (%ld bytes)\n", tmp->pathname, tmp->size);
 }
 
 

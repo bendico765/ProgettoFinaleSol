@@ -38,47 +38,33 @@ int parseConfigFile(char *pathname, config_t *server_config){
 			return -2;
 		}
 		if( strcmp(param, "THREAD_WORKERS") == 0 ){ 
-			if( isIntNumber(value, &(server_config->thread_workers)) != 0 ){
-				return -2;
-			}
+			if( isIntNumber(value, &(server_config->thread_workers)) != 0 ) return -2;
 			continue;
 		}
 		if( strcmp(param, "MAX_MEMORY") == 0 ){
-			if( isIntNumber(value, &(server_config->max_memory)) != 0 ){
-				return -2;
-			}
-				continue;
-			}
+			if( isIntNumber(value, &(server_config->max_memory)) != 0 ) return -2;
+			continue;
+		}
 		if( strcmp(param, "MAX_NUM_FILES") == 0 ){
-			if( isIntNumber(value, &(server_config->max_num_files)) != 0 ){
-				return -2;
-			}
+			if( isIntNumber(value, &(server_config->max_num_files)) != 0 ) return -2;
 			continue;
 		}
 		if( strcmp(param, "MAX_CONNECTIONS") == 0 ){
-			if( isIntNumber(value, &(server_config->max_connections)) != 0 ){
-				return -2;
-			}
+			if( isIntNumber(value, &(server_config->max_connections)) != 0 ) return -2;
 			continue;
 		}
 		if( strcmp(param, "SOCKET_NAME") == 0 ){ 
-			if( strlen(value)+1 > UNIX_PATH_MAX ){
-				return -2;
-			}
+			if( strlen(value)+1 > UNIX_PATH_MAX ) return -2;
 			strcpy(server_config->socket_name, value);
 			continue;
 		}
 		if( strcmp(param, "LOG_FILENAME") == 0 ){ 
-			if( strlen(value)+1 > PATH_LEN_MAX ){
-				return -2;
-			}
+			if( strlen(value)+1 > PATH_LEN_MAX ) return -2;
 			strcpy(server_config->log_filename, value);
 			continue;
 		}
 		if( strcmp(param, "NUM_BUCKETS_FILE") == 0 ){
-			if( isIntNumber(value, &(server_config->num_buckets_file)) != 0 ){
-				return -2;
-			}
+			if( isIntNumber(value, &(server_config->num_buckets_file)) != 0 ) return -2;
 			continue;
 		}
 		if( strcmp(param, "CACHE_POLICY") == 0 ){

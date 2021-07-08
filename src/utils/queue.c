@@ -61,7 +61,7 @@ int queueReinsert(queue_t *queue, node_t *node){
 	right_node = node->next_node;
 	left_node = node->prec_node;
 	// sistemo i puntatori dei nodi a destra ed a sinistra 
-	// del nodo con l'elemento trovato
+	// del nodo
 	if( right_node != NULL ){
 		right_node->prec_node = node->prec_node;
 	}
@@ -96,22 +96,22 @@ int queueReinsert(queue_t *queue, node_t *node){
 
 /*
 	Dealloca tutto il contenuto della coda, ed usa la funzione
-	free_value per deallocare il contenuto dei nodi.
+	freeValue per deallocare il contenuto dei nodi.
 	Restituisce 0 in caso di successo, -1 altrimenti.
 */
-int queueDestroy(queue_t *queue, void (*free_value)(void*)){
-	node_t *tmp;
+int queueDestroy(queue_t *queue, void (*freeValue)(void*)){
+	node_t *node;
 	
 	if( queue == NULL ){
 		return -1;
 	}
 	
-	while( (tmp = queue->head_node) != NULL ){
+	while( (node = queue->head_node) != NULL ){
 		queue->head_node = queue->head_node->next_node;
-		if( *free_value ){ 
-			if( tmp->value != NULL ) (*free_value)(tmp->value);
+		if( *freeValue ){ 
+			if( node->value != NULL ) (*freeValue)(node->value);
 		}
-		free(tmp);
+		free(node);
 	}
 	free(queue);
 	return 0;
@@ -147,7 +147,8 @@ void* queueRemove(queue_t *queue){
 /*
 	Rimuove il nodo passato come parametro dalla coda,
 	gestendo la logica dei puntatori dell lista ed i
-	contatori interni.
+	contatori interni ( ovviamente si assume che il nodo faccia
+	parte della coda).
 	
 	Nota bene: il nodo passato come parametro viene deallocato.
 	
@@ -164,6 +165,7 @@ void* queueRemoveByNode(queue_t *queue, node_t *node){
 	removed_value = node->value;
 	right_node = node->next_node;
 	left_node = node->prec_node;
+	
 	// sistemo i puntatori dei nodi a destra ed a sinistra 
 	// del nodo con l'elemento trovato
 	if( right_node != NULL ){
@@ -172,6 +174,7 @@ void* queueRemoveByNode(queue_t *queue, node_t *node){
 	if( left_node != NULL ){
 		left_node->next_node = node->next_node;
 	}
+	
 	// sistemo i puntatori alla testa ed alla coda 
 	// della lista
 	if( node == queue->head_node ){
@@ -180,6 +183,7 @@ void* queueRemoveByNode(queue_t *queue, node_t *node){
 	if( node == queue->tail_node ){
 		queue->tail_node = left_node;
 	}
+	
 	queue->len -= 1;
 	free(node);
 	return removed_value;
@@ -188,9 +192,9 @@ void* queueRemoveByNode(queue_t *queue, node_t *node){
 /*
 	Rimuove dalla coda la prima occorrenza del valore value,
 	partendo dalla fine della coda ed usando la funzione 
-	value_compare per confrontare i valori.
+	valueCompare per confrontare i valori.
 	
-	value_compare è una funzione che confronta due valori 
+	valueCompare è una funzione che confronta due valori 
 	nella coda e restituisce 0 se sono uguali, un valore diverso
 	altrimenti.
 	
@@ -198,14 +202,14 @@ void* queueRemoveByNode(queue_t *queue, node_t *node){
 	è stato trovato all'interno della coda o se i
 	parametri non erano validi
 */
-void* queueRemoveFirstOccurrance(queue_t *queue, void* value, int (*value_compare)(void*, void*)){
+void* queueRemoveFirstOccurrance(queue_t *queue, void* value, int (*valueCompare)(void*, void*)){
 	node_t *tmp;
 	
-	if( queue == NULL || *value_compare == NULL ) return NULL;
+	if( queue == NULL || *valueCompare == NULL ) return NULL;
 	
 	tmp = queue->tail_node;
 	while( tmp != NULL ){
-		if( value_compare(value, tmp->value) == 0 ){ // elemento trovato
+		if( valueCompare(value, tmp->value) == 0 ){ // elemento trovato
 			return queueRemoveByNode(queue, tmp);
 		}
 		else{
@@ -279,6 +283,14 @@ queue_t* queueGetNElems(queue_t *queue, int requested_items){
 	return shallow_queue;
 }
 
+
+/*
+	La funzione itera tutto il contenuto della coda ed applica la funzione printFunction
+	su ogni singolo elemento.
+	
+	La funzione printFunction è una funzione che stampa le informazioni relative un elemento
+	prendendo come parametri il puntatore all'elemento ed uno stream su cui stampare.
+*/
 void queuePrint(queue_t *queue, void (*printFunction)(void*,FILE*), FILE *stream){
 	node_t *tmp;
 	

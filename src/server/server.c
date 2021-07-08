@@ -48,11 +48,13 @@ typedef struct{
 } thread_arg_t;
 
 void updateStats(storage_t *storage, stats_t *server_stats, int num_expelled_files){
-	server_stats->num_files = storageGetNumElements(storage);
-	if( server_stats->num_files > server_stats->max_num_files ) server_stats->max_num_files = server_stats->num_files;
-	server_stats->dim_storage = storageGetSizeElements(storage);
-	if( server_stats->dim_storage > server_stats->max_dim_storage ) server_stats->max_dim_storage = server_stats->dim_storage;
-	if( num_expelled_files > 0 ) server_stats->cache_substitutions += 1;	
+	if( storage != NULL && server_stats != NULL ){
+		server_stats->num_files = storageGetNumElements(storage);
+		if( server_stats->num_files > server_stats->max_num_files ) server_stats->max_num_files = server_stats->num_files;
+		server_stats->dim_storage = storageGetSizeElements(storage);
+		if( server_stats->dim_storage > server_stats->max_dim_storage ) server_stats->max_dim_storage = server_stats->dim_storage;
+		if( num_expelled_files > 0 ) server_stats->cache_substitutions += 1;	
+	}
 }
 
 /*
@@ -594,19 +596,23 @@ void* workerThread(void* arg){
 	int fd_pipe =  ((thread_arg_t*)arg)->fd_pipe;
 	FILE* logfile = ((thread_arg_t*)arg)->logfile;
 	stats_t *server_stats = ((thread_arg_t*)arg)->server_stats;
+	int termination_flag;
 	
-	int termination_flag = 0;
+	termination_flag = 0;
 	while( termination_flag == 0){
-		int fd;
+		int fd; // fd prelevato dalla coda
 		void *tmp;
+		
 		// Sezione critica: prelevo il fd da servire dalla coda
 		ce_less1( lock(&fd_queue_lock), "Fallimento della lock in un thread worker");
 		while( (tmp = queueRemove(fd_queue)) == NULL ){ // coda vuota: aspetto
 			ce_less1( cond_wait(&fd_queue_cond, &fd_queue_lock), "Fallimento della wait in un thread worker");
 		}
 		ce_less1( unlock(&fd_queue_lock), "Fallimento della unlock in un thread worker");
+		
 		fd = *((int*)(tmp));
 		free(tmp);
+		
 		if( fd == -1 ){ // segnale di terminazione per il worker
 			termination_flag = 1;
 		}
@@ -655,12 +661,14 @@ void* workerThread(void* arg){
 				
 				// comunico la disconnessione di un client
 				ce_less1( writen(fd_pipe, (void*)&tmp, sizeof(int)), "Fallimento scrittura pipe thread worker");
+				
 				// chiudo l'effettivo fd, rendendolo nuovamente disponibile al dispatcher
 				close(fd);
 			}
 			else{ // scrivo il fd nella pipe, preparando il dispatcher a servirlo nuovamente
 				ce_less1( writen(fd_pipe, (void*)&fd, sizeof(int)), "Fallimento scrittura pipe thread worker");
 			}
+			
 			if( request != NULL ) freeMessage(request);
 		}
 	}
@@ -688,7 +696,6 @@ void terminateWorkers(queue_t *fd_queue, pthread_t workers[], int number_workers
 		errno = pthread_join(workers[i], NULL);
 		if( errno != 0 ){
 			perror("Errore nella pthread_join dei workers");
-			errno = 0;
 			return;
 		}
 	}
@@ -749,16 +756,19 @@ int initializeServerAndStart(char *sockname, int max_connections){
 int main(int argc, char *argv[]){
 	storage_t *storage; // storage dei files
 	config_t server_config; // configurazione del server
-	int signal_handler_pipe[2]; // pipe main/signal handler
-	int fd_pipe[2]; // pipe dispatcher/workers
 	queue_t *fd_queue; // coda dispatcher/workers
 	pthread_t *workers; // vettore di thread workers
 	FILE *logfile; // file in cui stampare i messaggi di log 
 	stats_t *server_stats; // struct contenente le statistiche
-	int socket_fd; // fd del socket del server
-	int fd_num = 0; // max fd attimo
 	fd_set set; // insieme fd attivi
 	fd_set rdset; // insieme fd attesi in lettura
+	int socket_fd; // fd del socket del server
+	int fd_num; // max fd attivo
+	int signal_handler_pipe[2]; // pipe main/signal handler
+	int fd_pipe[2]; // pipe dispatcher/workers
+	int connected_clients_counter; // contatore dei clients connessi
+	int soft_termination_flag;
+	int hard_termination_flag;
 
 	// controllo correttezza argomenti
 	if( argc != 2 ){ 
@@ -817,6 +827,7 @@ int main(int argc, char *argv[]){
 	
 	// metto il massimo indice di descrittore 
 	// attivo in fd_num
+	fd_num = 0;
 	if( socket_fd > fd_num ){
 		fd_num = socket_fd;
 	}
@@ -830,9 +841,10 @@ int main(int argc, char *argv[]){
 	FD_SET(socket_fd, &set);
 	FD_SET(signal_handler_pipe[0], &set);
 	FD_SET(fd_pipe[0], &set);
-	int connected_clients_counter = 0; // contatore dei clients connessi
-	int soft_termination_flag = 0;
-	int hard_termination_flag = 0;
+	connected_clients_counter = 0; 
+	soft_termination_flag = 0;
+	hard_termination_flag = 0;
+	
 	while( hard_termination_flag == 0 && ( soft_termination_flag == 0 ||  connected_clients_counter > 0 ) ){
 		rdset = set; // preparo la maschera per select
 		if( select(fd_num+1, &rdset, NULL, NULL, NULL) == -1 && errno != EINTR){
@@ -922,9 +934,7 @@ int main(int argc, char *argv[]){
 		// reinserisco gli eventuali fd serviti dai workers
 		if( FD_ISSET(fd_pipe[0], &rdset) ){
 			int new_fd;
-			int read_chars;
-			read_chars = readn(fd_pipe[0], (void*)&new_fd, sizeof(int));
-			if( read_chars == -1 ){
+			if( (readn(fd_pipe[0], (void*)&new_fd, sizeof(int))) == -1 ){
 				perror("Errore nella read della pipe di fd");
 				hard_termination_flag = 1;
 			}
@@ -942,12 +952,13 @@ int main(int argc, char *argv[]){
 			}
 		}
 	}
+	// terminazione workers
+	terminateWorkers(fd_queue, workers, server_config.thread_workers);
 	// stampa stastiche 
 	printStats(logfile, server_stats, storage);
 	// chiusura dei fd e deallocazione delle varie strutture
 	close(socket_fd);
 	unlink(server_config.socket_name);
-	terminateWorkers(fd_queue, workers, server_config.thread_workers);
 	queueDestroy(fd_queue, free);
 	storageDestroy(storage, NULL, fileFree);
 	free(server_stats);

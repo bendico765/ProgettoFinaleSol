@@ -47,7 +47,7 @@ void* threadSignalHandler(void *arg){
 	Funzione per inizializzare e lanciare un thread signal 
 	handler.
 	
-	Il thread è blocca i segnali SIGINT, SIGQUIT e SIGHUP
+	Il thread blocca i segnali SIGINT, SIGQUIT e SIGHUP
 	ed ignora il segnale SIGPIPE.
 	
 	Il parametro signal_handler_pipe è una pipe dove
@@ -61,6 +61,7 @@ int initializeSignalHandler(int signal_handler_pipe[]){
 	struct sigaction s;
 	struct signal_handler_arg_t *args;
 	sigset_t *set;
+	pthread_t thread_id;
 	
 	set = malloc(sizeof(sigset_t));
 	if( set == NULL ) return -1;
@@ -78,10 +79,10 @@ int initializeSignalHandler(int signal_handler_pipe[]){
 	if( sigaction(SIGPIPE,&s,NULL) == -1 ) return -1;
 	
 	// lancio il thread per il signal handling
-	args = malloc(sizeof(signal_handler_arg_t));
+	if( (args = malloc(sizeof(signal_handler_arg_t))) == NULL ) return -1;
+	
 	args->set = set;
 	args->signal_pipe = signal_handler_pipe;
-	pthread_t thread_id;
 	if( pthread_create(&thread_id, NULL, &threadSignalHandler, (void*)args) != 0 ) return -1;
 	if( pthread_detach(thread_id) != 0 ) return -1;
 	

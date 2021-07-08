@@ -156,9 +156,11 @@ int storageRemove(storage_t *storage, void *key, void (*freeKey)(void*), void (*
 	La funzione aggiorna il contenuto dell'elemento nello storage 
 	identificato da key, impostando new_content come nuovo contenuto
 	e new_size come nuova dimensione dell'elemento. 
+	
 	Se la modifica del contenuto dell'elemento causa un overflow
 	della cache, gli elementi espulsi vengono eliminati nello storage
 	e restituiti all'interno di una coda. 
+	
 	In caso di errore viene restituito NULL (errno impostato).
 	
 	La funzione elemEdit prende 3 parametri: l'elemento da modificare, 
@@ -176,7 +178,7 @@ int storageRemove(storage_t *storage, void *key, void (*freeKey)(void*), void (*
 */
 queue_t* storageEditElem(storage_t *storage, void *key, void *new_content, size_t new_size, int (*elemEdit)(void*,void*,size_t), int (*areElemsDifferent)(void*,void*)){	
 	// ricerca dell'elemento nello storage
-	if( storage == NULL || storageFind(storage, key) == NULL || *elemEdit == NULL ){
+	if( storage == NULL || *elemEdit == NULL ){
 		errno = EINVAL;
 		return NULL;
 	}

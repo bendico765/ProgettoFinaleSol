@@ -51,7 +51,7 @@ fifo_cache_t* fifoCacheCreate(int nbuckets, unsigned int (*hashFunction)(void*),
 	}
 	
 	new_cache = malloc(sizeof(fifo_cache_t));
-	if( new_cache == NULL ){ return NULL; }
+	if( new_cache == NULL )	return NULL;
 	
 	// creazione hash table
 	new_cache->elem_hash = icl_hash_create(nbuckets, hashFunction, hashKeyCompare);

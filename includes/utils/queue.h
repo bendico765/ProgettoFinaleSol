@@ -10,7 +10,7 @@
 	Tuttavia vi sono alcune operazioni che violano 
 	questa politica, come ad esempio queueRemoveFirstOcurance,
 	che permette di rimuovere la prima occorrenza di un elemento
-	nella struttura. 
+	(partendo dal fondo della coda)
 */
 typedef struct node_t{
 	void* value;
@@ -27,10 +27,10 @@ typedef struct queue_t{
 queue_t* queueCreate();
 node_t* queueInsert(queue_t *queue, void *value);
 int queueReinsert(queue_t *queue, node_t *node);
-int queueDestroy(queue_t *queue, void (*free_value)(void*));
+int queueDestroy(queue_t *queue, void (*freeValue)(void*));
 void* queueRemove(queue_t *queue);
 void* queueRemoveByNode(queue_t *queue, node_t *node);
-void* queueRemoveFirstOccurrance(queue_t *queue, void* value, int(*value_compare)(void*, void*));
+void* queueRemoveFirstOccurrance(queue_t *queue, void* value, int(*valueCompare)(void*, void*));
 int queueIsEmpty(queue_t *queue);
 int queueLen(queue_t *queue);
 queue_t* queueGetNElems(queue_t *queue, int N); // richiede di chiamare srand() per generare una sequenza casuale

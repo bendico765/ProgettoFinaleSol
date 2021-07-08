@@ -256,26 +256,28 @@ void hOptionHandler(char *program_name){
 }
 
 int fOptionHandler(client_params_t *params, char *optarg){
-	if( params != NULL ){
-		if( strnlen(optarg, UNIX_PATH_MAX+1) < UNIX_PATH_MAX+1 ){ // controllo che il socket name non superi la lunghezza massima
-			if( params->socket_name[0] == '\0' )
-				strncpy(params->socket_name, optarg, UNIX_PATH_MAX);
-			else{
-				fprintf(stderr, "Un nome per il socket è già stato definito\n");
-				return -1;
-			}
-		}
-		else{
-			fprintf(stderr, "Il socket name supera la lunghezza consentita (%d caratteri)\n", UNIX_PATH_MAX);
-			return -1;
-		}
-		if(openConnection(params->socket_name, 0, (struct timespec){0,0}) == -1){
+	if( params == NULL ) return -1;
+	
+	// controllo che il socket name non superi la lunghezza massima
+	if( strnlen(optarg, UNIX_PATH_MAX+1) >= UNIX_PATH_MAX+1 ){ 
+		fprintf(stderr, "Il socket name supera la lunghezza consentita (%d caratteri)\n", UNIX_PATH_MAX);
+		return -1;
+	}
+	
+	// controllo che non sia già definito un socket name
+	if( params->socket_name[0] == '\0' ){
+		if(openConnection(optarg, 0, (struct timespec){0,0}) == -1){
 			perror("Errore nella connessione con il server");
 			return -1;
 		}
-		return 0;
+		strncpy(params->socket_name, optarg, UNIX_PATH_MAX);
 	}
-	return -1;
+	else{
+		fprintf(stderr, "Un nome per il socket è già stato definito\n");
+		return -1;
+	}
+	
+	return 0;
 }
 
 /*
@@ -398,7 +400,6 @@ int wOptionHandler(client_params_t *params, char *optarg, char *expelled_files_d
 	}
 	
 	// scrittura dei files su server
-	
 	if( writeFilesToServer(to_send_files, expelled_files_dirname, &params->delay_time, params->p_flag) == -1 ) return -1;
 	
 	if( dir != NULL ) free(dir);
@@ -587,11 +588,13 @@ int ROptionHandler(client_params_t *params, char *optarg, char *files_dirname){
 int tOptionHandler(client_params_t *params, char *optarg){
 	long delay_milliseconds, nanoseconds;
 	time_t seconds;
+	
 	// verifica della validità del tempo
 	if( isNumber(optarg, &delay_milliseconds) != 0 || delay_milliseconds < 0){
 		fprintf(stderr, "Opzione -t non valida\n");
 		return -1;
 	}
+	
 	// trasformazione dei millisecondi in secondi e nanosecondi
 	seconds = delay_milliseconds/1000;
 	nanoseconds =  (delay_milliseconds - seconds*1000)*1000000;

@@ -123,14 +123,18 @@ char* absolutePathToFilename(char *absolute_path){
 	char *old_token;
 	char *copy;
 	char *res;
+	
 	if( (copy = strdup(absolute_path)) == NULL) return NULL;
+	
 	token = strtok(copy, "/");
 	while( token != NULL ){
 		old_token = token;
 		token = strtok(NULL, "/");
 	}
+	
 	res = strdup(old_token);
 	free(copy);
+	
 	return res;
 }
 
@@ -138,8 +142,8 @@ char* absolutePathToFilename(char *absolute_path){
 	Dato il percorso relativo ad un file, prova a risolvere il percorso
 	assoluto e lo restituisce in caso di successo, o restituisce NULL
 	in caso di errore (errno settato). 
-	La memoria per il path assoluto 
-	è allocata dinamicamente e deve essere successivamente liberata.
+	La memoria per il path assoluto è allocata dinamicamente 
+	e deve essere successivamente liberata.
 */
 char *relativeToAbsolutePath(char *relative_path){
 	return realpath(relative_path, NULL);

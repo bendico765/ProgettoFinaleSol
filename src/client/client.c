@@ -150,7 +150,9 @@ int main(int argc, char *argv[]){
 				break;
 		}
 	}
-	if( params->socket_name[0] == '\0' ) closeConnection(params->socket_name);
+	if( params->socket_name[0] != '\0' && closeConnection(params->socket_name) == -1){
+		fprintf(stderr, "Errore durante la chiusura della connessione con il server\n");
+	}
 	paramsDestroy(params);
 	return 0;
 }

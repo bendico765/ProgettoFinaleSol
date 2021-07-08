@@ -131,7 +131,7 @@ int openConnection(const char* sockname, int msec, const struct timespec abstime
 	int socket_fd;
 	struct sockaddr_un sa;
 	
-	if( msec < 0 ){ // massimo valore in msec consentito
+	if( msec < 0 ){
 		errno = EINVAL;
 		return -1;
 	}
@@ -154,6 +154,7 @@ int openConnection(const char* sockname, int msec, const struct timespec abstime
 		struct timespec real_time;
 		struct timespec first_delay;
 		
+		// determino il ritardo tra un tentativo e l'altro
 		seconds = msec/1000;
 		nanoseconds =  (msec - seconds*1000)*1000000;
 		first_delay = (struct timespec) {seconds, nanoseconds};
@@ -208,7 +209,6 @@ int openFile(const char* pathname, int flags){
 	if( (recv_message = receiveMessage(saved_fd)) == NULL ) return -1;
 	switch( recv_message->hdr->option ){
 		case SUCCESS:
-			errno = 0;
 			res = 0;
 			break;
 		case FILE_ALREADY_EXIST:
@@ -224,6 +224,8 @@ int openFile(const char* pathname, int flags){
 			res = -1;
 			break;
 		default:
+			errno = EPROTONOSUPPORT;
+			res = -1;
 			break;
 	}
 	
@@ -247,7 +249,6 @@ int removeFile(const char* pathname){
 	if( (recv_message = receiveMessage(saved_fd)) == NULL ) return -1;
 	switch( recv_message->hdr->option ){
 		case SUCCESS:
-			errno = 0;
 			res = 0;
 			break;
 		case INEXISTENT_FILE:
@@ -255,6 +256,8 @@ int removeFile(const char* pathname){
 			res = -1;
 			break;
 		default:
+			errno = EPROTONOSUPPORT;
+			res = -1;
 			break;
 	}
 	
@@ -276,7 +279,8 @@ int writeFile(const char* pathname, const char* dirname){
 	message_t *recv_message;
 	size_t size;
 	int res;
-	DIR *dir = NULL;
+	DIR *dir;
+	void *content;
 	
 	// verifica la validità di pathname
 	if( pathname == NULL ){
@@ -285,6 +289,7 @@ int writeFile(const char* pathname, const char* dirname){
 	}
 	
 	// verifica l'esistenza della eventuale directory
+	dir = NULL;
 	if( dirname != NULL && (dir = opendir(dirname)) == NULL ){
 		errno = ENOENT;
 		return -1;
@@ -296,23 +301,25 @@ int writeFile(const char* pathname, const char* dirname){
 	// controllo di aver ottenuto il permesso
 	recv_message = receiveMessage(saved_fd);
 	if( recv_message == NULL ) return -1;
-	if( recv_message->hdr->option == SUCCESS ){ // permesso accordato
-		void *content;
+	
+	if( recv_message->hdr->option == SUCCESS ){ // permesso accordato'
 		freeMessage(recv_message);
+		
 		// apro il file
 		if( ( content = getFileContent(pathname, &size)) == NULL && size == -1) return -1;
+		
 		// spedisco il file
 		if( sendMessage(saved_fd, WRITE_FILE_OPT, pathname, 0, size, (char*) content) == -1 ) return -1;
+		
 		// ricevo l'esito dell'operazione
 		recv_message = receiveMessage(saved_fd);
 		if( recv_message == NULL ) return -1;
+		
 		switch( recv_message->hdr->option ){
 			case SUCCESS: // scrittura avvenuta con successo
-				errno = 0;
 				res = 0;
 				break;
 			case CACHE_SUBSTITUTION: // file espulsi dallo storage
-				errno = 0;
 				res = writeReceivedFilesToDir(saved_fd, dirname, recv_message->hdr->flags);
 				break;
 			case FILE_TOO_BIG: // file troppo grande per la cache
@@ -320,18 +327,25 @@ int writeFile(const char* pathname, const char* dirname){
 				res = -1;
 				break;
 			default:
+				errno = EPROTONOSUPPORT;
+				res = -1;
 				break;
 		}
 		free(content);
 	}
 	else{
-		if( recv_message->hdr->option == INEXISTENT_FILE ){
-			errno = ENOENT;
-		}
-		else{ // la precedente operazione non era una openFile
-			errno = EPERM;
-		}
 		res = -1;
+		switch( recv_message->hdr->option ){
+			case INEXISTENT_FILE:
+				errno = ENOENT;
+				break;
+			case FILE_NOT_OPENED:
+				errno = EPERM;
+				break;
+			default:
+				errno = EPROTONOSUPPORT;
+				break;
+		}
 	}
 	if( dir != NULL ) free(dir);
 	freeMessage(recv_message);
@@ -359,6 +373,7 @@ int readFile(const char* pathname, void** buf, size_t* size){
 	// ricevo la risposta del server
 	msg = receiveMessage(saved_fd);
 	if( msg == NULL ) return -1;
+	
 	switch( msg->hdr->option ){
 		case SUCCESS:
 			// salvo il contenuto del file
@@ -367,7 +382,6 @@ int readFile(const char* pathname, void** buf, size_t* size){
 			memcpy(copy, msg->cnt->content, temp_size);
 			*buf = copy;
 			*size =	temp_size;	
-			errno = 0;
 			res = 0;
 			break;
 		case INEXISTENT_FILE:
@@ -375,6 +389,8 @@ int readFile(const char* pathname, void** buf, size_t* size){
 			res = -1;
 			break;
 		default:
+			errno = EPROTONOSUPPORT;
+			res = -1;
 			break;
 	}
 	freeMessage(msg);
@@ -394,7 +410,7 @@ int readFile(const char* pathname, void** buf, size_t* size){
 int appendToFile(const char* pathname, void* buf, size_t size, const char* dirname){
 	int res;
 	message_t *recv_message;
-	DIR *dir = NULL;
+	DIR *dir;
 	
 	// controllo validità di pathname e buffer
 	if( pathname == NULL || buf == NULL ){
@@ -402,6 +418,7 @@ int appendToFile(const char* pathname, void* buf, size_t size, const char* dirna
 		return -1;
 	}
 	// controllo l'esistenza dell'eventuale dirname
+	dir = NULL;
 	if( dirname != NULL && (dir = opendir(dirname)) == NULL ){
 		errno = ENOENT;
 		return -1;
@@ -412,20 +429,22 @@ int appendToFile(const char* pathname, void* buf, size_t size, const char* dirna
 	
 	recv_message = receiveMessage(saved_fd);
 	if( recv_message == NULL ) return -1;
+	
 	if( recv_message->hdr->option == SUCCESS ){ // permesso di append accordato
 		freeMessage(recv_message);
+		
 		// mando le modifiche da appendere
 		if( sendMessage(saved_fd, APPEND_TO_FILE_OPT, pathname, 0, size, buf) == -1 ) return -1;
+		
 		// ricevo l'esito dell'operazione
 		recv_message = receiveMessage(saved_fd);
 		if( recv_message == NULL ) return -1;
+		
 		switch( recv_message->hdr->option ){
 			case SUCCESS: // append avvenuto con successo
-				errno = 0;
 				res = 0;
 				break;
 			case CACHE_SUBSTITUTION: // file espulsi dallo storage
-				errno = 0;
 				res = writeReceivedFilesToDir(saved_fd, dirname, recv_message->hdr->flags);
 				break;
 			case FILE_TOO_BIG:
@@ -433,15 +452,25 @@ int appendToFile(const char* pathname, void* buf, size_t size, const char* dirna
 				res = -1;
 				break;
 			default:
+				errno = EPROTONOSUPPORT;
+				res = -1;
 				break;
 		}
 	}
-	else{ // file non esistente
-		errno = ENOENT;
-		res = -1;
+	else{
+		if( recv_message->hdr->option == INEXISTENT_FILE ){  // file non esistente
+			errno = ENOENT;
+			res = -1;
+		}
+		else{ // opzione non valida
+			errno = EPROTONOSUPPORT;
+			res = -1;
+		}
 	}
+	
 	freeMessage(recv_message);
-	free(dir);
+	if(dir != NULL) free(dir);
+	
 	return res;
 }
 
@@ -478,6 +507,7 @@ int readNFiles(int N, const char* dirname){
 	
 	freeMessage(recv_message);
 	if(dir != NULL) free(dir);
+	
 	return num_files;
 }
 
@@ -498,14 +528,15 @@ int closeFile(const char* pathname){
 		errno = EINVAL;
 		return -1;
 	}
+	
 	// mando la richiesta di chisura
 	if( sendMessage(saved_fd, CLOSE_FILE_OPT, pathname, 0, 0, NULL) == -1 ) return -1;
+	
 	// ottengo la risposta dal server
 	recv_message = receiveMessage(saved_fd);
 	if( recv_message == NULL ) return -1;
 	switch( recv_message->hdr->option ){
 		case SUCCESS:
-			errno = 0;
 			res = 0;
 			break;
 		case INEXISTENT_FILE:
@@ -513,6 +544,8 @@ int closeFile(const char* pathname){
 			res = -1;
 			break;
 		default:
+			errno = EPROTONOSUPPORT;
+			res = -1;
 			break;
 	}
 	freeMessage(recv_message);
@@ -531,12 +564,16 @@ int closeConnection(const char* sockname){
 		errno = EINVAL;
 		return -1;
 	}
+	
 	// controllo che corrisponda al socket name aperto
 	if( saved_fd == -1 || strncmp(saved_sockname, sockname, UNIX_PATH_MAX) != 0 ){
 		errno = EBADF;
 		return -1;
 	}
+	
+	// provo a chiudere il file descriptor
 	if( close(saved_fd) == -1 ) return -1;
+	
 	saved_fd = -1;
 	return 0;
 }

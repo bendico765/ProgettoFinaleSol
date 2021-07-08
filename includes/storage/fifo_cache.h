@@ -5,6 +5,21 @@
 #include "icl_hash.h"
 #include "queue.h"
 
+/*
+	Spiegazione sommaria sul funzionamento della cache:
+	
+	Quando un elemento viene inserito nella cache, viene prima di tutto
+	inserito nella coda queue (causando eventuali overflow ed espulsioni);
+	l'elemento inserito si troverà all'interno di un nodo nella coda (di tipo
+	node_t).
+	La tabella hash elem_hash associa ad ogni chiave il puntatotore
+	al nodo della coda in cui tale elemento è contenuto.
+	
+	Cosi facendo, eventuali operazioni di modifica/rimozione di un elemento
+	non necessitano di scorrere tutta la coda alla ricerca del nodo contenente
+	l'elemento in questione, ma possono essere fatte in tempo costante.
+*/
+
 typedef struct{
 	icl_hash_t *elem_hash; // struttura per salvare gli elementi
 	queue_t *queue; // coda fifo di elementi nello storage
