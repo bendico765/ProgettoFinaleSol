@@ -94,18 +94,18 @@ clean:
 test1:
 	@echo "FIFO Test1"
 	make
-	./$(SCRIPTS_FOLDER)/test1.sh $(BIN_FOLDER)/server $(CONFIG_FOLDER)/FIFO_config1.txt $(TESTS_FOLDER)/FIFO_test1.txt
+	bash ./$(SCRIPTS_FOLDER)/test1.sh $(BIN_FOLDER)/server $(CONFIG_FOLDER)/FIFO_config1.txt $(TESTS_FOLDER)/FIFO_test1.txt
 	
 test2:
 	@echo "FIFO Test2"
 	make
-	./$(SCRIPTS_FOLDER)/test2.sh $(BIN_FOLDER)/server $(CONFIG_FOLDER)/FIFO_config2.txt $(TESTS_FOLDER)/FIFO_test2.txt
+	bash ./$(SCRIPTS_FOLDER)/test2.sh $(BIN_FOLDER)/server $(CONFIG_FOLDER)/FIFO_config2.txt $(TESTS_FOLDER)/FIFO_test2.txt
 	
 LRU_test2:
 	@echo "LRU Test2"
 	make
-	./$(SCRIPTS_FOLDER)/test2.sh $(BIN_FOLDER)/server $(CONFIG_FOLDER)/LRU_config2.txt $(TESTS_FOLDER)/LRU_test2.txt
+	bash ./$(SCRIPTS_FOLDER)/test2.sh $(BIN_FOLDER)/server $(CONFIG_FOLDER)/LRU_config2.txt $(TESTS_FOLDER)/LRU_test2.txt
 	
 serverStart:
 	make
-	valgrind -s --leak-check=full --track-origins=yes $(BIN_FOLDER)/server $(CONFIG_FOLDER)/config.txt
+	valgrind --leak-check=full --track-origins=yes $(BIN_FOLDER)/server $(CONFIG_FOLDER)/config.txt

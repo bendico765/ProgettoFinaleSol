@@ -15,7 +15,7 @@ sleep 5
 # lettura ed esecuzione dei casi di test
 cat $3 | while read line
 do
-	$line
+$line
 done
 
 sleep 10
