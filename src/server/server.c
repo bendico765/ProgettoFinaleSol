@@ -23,7 +23,10 @@
 #include "storage.h"
 #include "file.h"
 
-#define LOG_MSG_LEN 512
+#define LOG_MSG_LEN 512 
+
+// Ordine delle lock:
+// fd_queue_lock -> storage_lock -> stats_lock -> logfile_lock
 
 // Mutex e cond. var. della coda tra dispatcher e workers
 pthread_mutex_t fd_queue_lock = PTHREAD_MUTEX_INITIALIZER;
