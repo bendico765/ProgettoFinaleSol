@@ -721,7 +721,6 @@ pthread_t* initializeWorkers(int number_workers, thread_arg_t *arg_struct){
 }
 
 void printStats(FILE *stream, stats_t *server_stats, storage_t *storage){
-	ce_less1(lock(&logfile_lock), "Errore lock logfile");
 	fprintf(stream, "---------\n");
 	fprintf(stream, "NUMERO FILES MEMORIZZATI: %ld\n", server_stats->num_files);
 	fprintf(stream, "DIMENSIONE FILE STORAGE (bytes): %ld\n", server_stats->dim_storage);
@@ -731,7 +730,6 @@ void printStats(FILE *stream, stats_t *server_stats, storage_t *storage){
 	fprintf(stream, "FILES MEMORIZZATI A FINE ESECUZIONE:\n");
 	storagePrint(storage, filePrintInfo, stream);
 	fprintf(stream, "---------\n");
-	ce_less1(unlock(&logfile_lock), "Errore unlock logfile");
 }
 
 /*
@@ -955,7 +953,7 @@ int main(int argc, char *argv[]){
 	// terminazione workers
 	terminateWorkers(fd_queue, workers, server_config.thread_workers);
 	// stampa stastiche 
-	printStats(logfile, server_stats, storage);
+	printStats(stdout, server_stats, storage);
 	// chiusura dei fd e deallocazione delle varie strutture
 	close(socket_fd);
 	unlink(server_config.socket_name);

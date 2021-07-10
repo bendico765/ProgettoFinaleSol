@@ -10,6 +10,7 @@
 ./bin/client -p -t 200 -f mysock -W files/file1 -D expDir
 ./bin/client -p -t 200 -f mysock -R 
 ./bin/client -p -t 200 -f mysock -R -d expelledFilesDir/
+./bin/client -p -t 200 -f mysock -w files,3
 ./bin/client -p -t 200 -f mysock -W files/file1 -r /home/gianluca/Scrivania/ProgettoFinaleSol/files/file1 -d expelledFilesDir/
 ./bin/client -p -t 200 -f mysock -R 0 -d expelledFilesDir/
 ./bin/client -p -t 200 -f mysock -W files/file1 -r /home/gianluca/Scrivania/ProgettoFinaleSol/files/file1 -d expelledFilesDir/ -W files/file5 -R 2 -d expelledFilesDir/ -c /home/gianluca/Scrivania/ProgettoFinaleSol/files/file1,/home/gianluca/Scrivania/ProgettoFinaleSol/files/file5

@@ -123,7 +123,13 @@ int main(int argc, char *argv[]){
 				if( cOptionHandler(params, optarg) != 0 ) termination_flag = 1;
 				break;
 			case 'p': // abilitazione delle stampe su stdout
-				params->p_flag = 1;
+				if( params->p_flag == 0 ){
+					params->p_flag = 1;
+				}
+				else{
+					fprintf(stderr, "Opzione -p già specificata\n");
+					termination_flag = 1;
+				}
 				break;
 			case '?':
 				fprintf(stdout, "Opzione sconosciuta %c\n", optopt);
